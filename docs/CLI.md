@@ -89,7 +89,7 @@ Accepted by every command.
 | [`grid`](#neru-grid)                                         | Coordinate grid navigation      | Yes | All |
 | [`recursive_grid`](#neru-recursive_grid)                     | Recursive cell navigation       | Yes | All |
 | [`scroll`](#neru-scroll)                                     | Vim-style scrolling             | Yes | All |
-| [`monitor_select`](#neru-monitor_select)                     | Jump the cursor to a display    | Yes | macOS · Linux |
+| [`monitor_select`](#neru-monitor_select)                     | Jump the cursor to a display    | Yes | All |
 | [`action`](#actions)                                         | One-shot mouse/scroll/key input | Yes | All ² |
 | [`run`](#neru-run)                                           | Run several actions in order    | Yes | All |
 | [`macro`](#neru-macro)                                       | Run a named sequence from config | Yes | All |
@@ -496,9 +496,6 @@ Move the cursor to another display.
 ```
 neru monitor_select [flags]
 ```
-
-**Platforms:** macOS · Linux. Not implemented on Windows, where it returns
-`ERR_NOT_SUPPORTED`.
 
 Opens a labelled panel on each display. Typing a label moves the cursor to that
 display. The current display is excluded.

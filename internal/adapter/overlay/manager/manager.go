@@ -5,6 +5,7 @@ import (
 
 	"github.com/y3owk1n/neru/internal/adapter/overlay/render/grid"
 	"github.com/y3owk1n/neru/internal/adapter/overlay/render/hints"
+	"github.com/y3owk1n/neru/internal/adapter/overlay/render/monitorselect"
 	"github.com/y3owk1n/neru/internal/adapter/overlay/render/recursivegrid"
 	"github.com/y3owk1n/neru/internal/config"
 	"github.com/y3owk1n/neru/internal/domain"
@@ -117,29 +118,13 @@ type PointerAppearance struct {
 }
 
 // MonitorSelectStyle carries the resolved (theme-applied) appearance for the
-// monitor_select overlay. Colors are hex strings, parsed by the backend, to
-// mirror how the hints/grid styles are threaded.
-type MonitorSelectStyle struct {
-	FontSize           int
-	SubtitleFontSize   int
-	FontFamily         string
-	SubtitleFontFamily string
-	BorderRadius       int
-	PaddingX           int
-	PaddingY           int
-	BorderWidth        int
-	BackgroundColor    string
-	TextColor          string
-	MatchedTextColor   string
-	BorderColor        string
-	BackdropColor      string
-	SubtitleTextColor  string
-	HideInScreenShare  bool
-}
+// monitor_select overlay. It lives in render/monitorselect because the shared
+// panel geometry needs it and that package must not import this one.
+type MonitorSelectStyle = monitorselect.Style
 
 // MonitorSelector is the optional extension a backend implements when it can
-// draw the monitor-select overlay. The darwin and Linux backends do; elsewhere
-// the mode reports CodeNotSupported.
+// draw the monitor-select overlay. A backend that does not satisfy it makes the
+// mode report CodeNotSupported. docs/CROSS_PLATFORM.md owns which backends do.
 type MonitorSelector interface {
 	DrawMonitorSelect(targets []MonitorSelectTarget, style MonitorSelectStyle) error
 	HideMonitorSelect()

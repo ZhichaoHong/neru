@@ -12,6 +12,7 @@ import (
 	"github.com/y3owk1n/neru/internal/adapter/overlay/render/badge"
 	gridcomponent "github.com/y3owk1n/neru/internal/adapter/overlay/render/grid"
 	hintscomponent "github.com/y3owk1n/neru/internal/adapter/overlay/render/hints"
+	"github.com/y3owk1n/neru/internal/adapter/overlay/render/monitorselect"
 	recursivegridcomponent "github.com/y3owk1n/neru/internal/adapter/overlay/render/recursivegrid"
 	"github.com/y3owk1n/neru/internal/domain"
 	domainGrid "github.com/y3owk1n/neru/internal/domain/grid"
@@ -620,8 +621,9 @@ func (o *sharedOverlay) drawBadge(
 // drawMonitorSelect renders one centered, labeled panel per monitor for the
 // interactive monitor picker. Panels reuse the existing rounded-rect + text
 // primitives (no dedicated C), and are sized from the scaled font (see
-// monitorSelectPanelLayout) so they stay legible on HiDPI. The label is drawn
-// with the matched/selected color when it has a matched prefix or is selected.
+// monitorselect.PanelLayout) so they stay legible on HiDPI. Every label is drawn
+// in the single text color, matching darwin: a matched prefix or a selected panel
+// is not visually distinguished here.
 func (o *sharedOverlay) drawMonitorSelect(
 	targets []manager.MonitorSelectTarget,
 	style manager.MonitorSelectStyle,
@@ -646,7 +648,7 @@ func (o *sharedOverlay) drawMonitorSelect(
 			o.drawRect(target.Bounds, spec.backdrop, 0, 0)
 		}
 
-		panel, labelRect, subtitleRect, radius := monitorSelectPanelLayout(
+		panel, labelRect, subtitleRect, radius := monitorselect.PanelLayout(
 			target.Bounds, target.Label, target.Subtitle, style, o.srf.surfaceScale(),
 		)
 		o.drawRoundedRect(panel, radius, spec.background, spec.border, spec.borderWidth)

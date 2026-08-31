@@ -4,7 +4,6 @@ package linux
 
 import (
 	"image"
-	"math"
 	"strings"
 	"sync"
 	"unsafe"
@@ -16,6 +15,7 @@ import (
 	"github.com/y3owk1n/neru/internal/adapter/overlay/render/grid"
 	"github.com/y3owk1n/neru/internal/adapter/overlay/render/hints"
 	"github.com/y3owk1n/neru/internal/adapter/overlay/render/modeindicator"
+	"github.com/y3owk1n/neru/internal/adapter/overlay/render/monitorselect"
 	"github.com/y3owk1n/neru/internal/adapter/overlay/render/recursivegrid"
 	"github.com/y3owk1n/neru/internal/adapter/overlay/render/stickyindicator"
 	"github.com/y3owk1n/neru/internal/adapter/platform"
@@ -854,121 +854,6 @@ func detectLinuxOverlayBackend() linuxOverlayBackend {
 	return linuxOverlayBackendUnknown
 }
 
-const (
-	// These mirror the macOS overlay (monitor_select_overlay_darwin.m) so the
-	// Linux monitor_select UI matches darwin: auto padding derived from the label
-	// font when the config uses the -1 sentinel, a small label/subtitle gap, an
-	// 80% cap on panel size relative to the monitor, and default font sizes.
-	monitorSelectLabelGap       = 4
-	monitorSelectAutoPadXMin    = 24
-	monitorSelectAutoPadYMin    = 12
-	monitorSelectAutoPadXRatio  = 0.3
-	monitorSelectAutoPadYRatio  = 0.15
-	monitorSelectMaxFraction    = 0.8
-	monitorSelectMaxRadius      = 16
-	monitorSelectDefaultFont    = 96
-	monitorSelectDefaultSubFont = 18
-)
-
-// monitorSelectFontOr returns the configured font size, or a default when unset
-// (<= 0), matching the macOS overlay's fallbacks (96 label / 18 subtitle).
-func monitorSelectFontOr(value, fallback int) float64 {
-	if value <= 0 {
-		return float64(fallback)
-	}
-
-	return float64(value)
-}
-
-// monitorSelectPanelLayout computes, in device pixels, the centered panel rect,
-// the label/subtitle text rects, and the corner radius — mirroring the macOS
-// overlay's sizing so the Linux monitor_select UI matches darwin. Padding and
-// radius honor the same "auto" (-1) config sentinels. scale is the backend HiDPI
-// factor (X11 Xft.dpi; 1 on Wayland, which scales via the compositor buffer).
-func monitorSelectPanelLayout(
-	monitor image.Rectangle,
-	label, subtitle string,
-	style manager.MonitorSelectStyle,
-	scale float64,
-) (image.Rectangle, image.Rectangle, image.Rectangle, float64) {
-	labelFont := monitorSelectFontOr(style.FontSize, monitorSelectDefaultFont) * scale
-	subFont := monitorSelectFontOr(style.SubtitleFontSize, monitorSelectDefaultSubFont) * scale
-
-	// Auto padding from the label font when the config uses -1 (matching darwin).
-	padX := float64(style.PaddingX) * scale
-	if style.PaddingX < 0 {
-		padX = math.Max(
-			monitorSelectAutoPadXMin*scale,
-			math.Round(labelFont*monitorSelectAutoPadXRatio),
-		)
-	}
-
-	padY := float64(style.PaddingY) * scale
-	if style.PaddingY < 0 {
-		padY = math.Max(
-			monitorSelectAutoPadYMin*scale,
-			math.Round(labelFont*monitorSelectAutoPadYRatio),
-		)
-	}
-
-	labelW := badge.EstimateTextWidth(label, labelFont)
-	labelH := badge.EstimateTextHeight(labelFont)
-
-	subW, subH, gap := 0, 0, 0
-	if subtitle != "" {
-		subW = badge.EstimateTextWidth(subtitle, subFont)
-		subH = badge.EstimateTextHeight(subFont)
-		gap = int(math.Round(float64(monitorSelectLabelGap) * scale))
-	}
-
-	panelW := max(labelW, subW) + int(padX)*paddingMultiplier
-
-	panelH := labelH + int(padY)*paddingMultiplier
-	if subtitle != "" {
-		panelH += subH + gap
-	}
-
-	// Cap the panel to a fraction of the monitor, matching darwin.
-	if maxW := int(float64(monitor.Dx()) * monitorSelectMaxFraction); panelW > maxW {
-		panelW = maxW
-	}
-
-	if maxH := int(float64(monitor.Dy()) * monitorSelectMaxFraction); panelH > maxH {
-		panelH = maxH
-	}
-
-	// The panel hangs on the monitor's center point.
-	center := image.Pt(
-		monitor.Min.X+monitor.Dx()/halfDivisor,
-		monitor.Min.Y+monitor.Dy()/halfDivisor,
-	)
-	panel := badge.CenteredOn(center, panelW, panelH)
-
-	// Corner radius: auto = min(panelH/2, 16), matching darwin.
-	radius := float64(style.BorderRadius) * scale
-	if style.BorderRadius < 0 {
-		radius = math.Min(float64(panelH)/halfDivisor, monitorSelectMaxRadius*scale)
-	}
-
-	// Vertically center the label (+ subtitle) block within the panel.
-	totalTextH := labelH
-	if subtitle != "" {
-		totalTextH += gap + subH
-	}
-
-	textTop := panel.Min.Y + (panelH-totalTextH)/halfDivisor
-
-	labelRect := image.Rect(panel.Min.X, textTop, panel.Max.X, textTop+labelH)
-
-	subtitleRect := image.Rectangle{}
-	if subtitle != "" {
-		subTop := labelRect.Max.Y + gap
-		subtitleRect = image.Rect(panel.Min.X, subTop, panel.Max.X, subTop+subH)
-	}
-
-	return panel, labelRect, subtitleRect, radius
-}
-
 // monitorSelectDrawSpec holds the once-parsed colors and base (unscaled) font
 // sizes shared by both backends' DrawMonitorSelect. Base font sizes are passed
 // to drawTextCentered, which applies the backend scale (X11) or none (Wayland).
@@ -994,9 +879,12 @@ func newMonitorSelectDrawSpec(style manager.MonitorSelectStyle) monitorSelectDra
 		text:         badge.ParseHexARGB(style.TextColor),
 		subtitleText: badge.ParseHexARGB(style.SubtitleTextColor),
 		borderWidth:  float64(max(style.BorderWidth, 1)),
-		labelFont:    monitorSelectFontOr(style.FontSize, monitorSelectDefaultFont),
-		subtitleFont: monitorSelectFontOr(style.SubtitleFontSize, monitorSelectDefaultSubFont),
-		hasBackdrop:  strings.TrimSpace(style.BackdropColor) != "",
+		labelFont:    monitorselect.FontOr(style.FontSize, monitorselect.DefaultFontSize),
+		subtitleFont: monitorselect.FontOr(
+			style.SubtitleFontSize,
+			monitorselect.DefaultSubtitleFontSize,
+		),
+		hasBackdrop: strings.TrimSpace(style.BackdropColor) != "",
 	}
 }
 

@@ -1,21 +1,19 @@
-//go:build linux
-
-package linux
+package monitorselect_test
 
 import (
 	"image"
 	"testing"
 
-	"github.com/y3owk1n/neru/internal/adapter/overlay/manager"
+	"github.com/y3owk1n/neru/internal/adapter/overlay/render/monitorselect"
 )
 
-func TestMonitorSelectPanelLayout_OddPanelWidthKeepsItsSize(t *testing.T) {
+func TestPanelLayout_OddPanelWidthKeepsItsSize(t *testing.T) {
 	t.Parallel()
 
 	monitor := image.Rect(0, 0, 100, 100)
-	style := manager.MonitorSelectStyle{FontSize: 10}
+	style := monitorselect.Style{FontSize: 10}
 
-	panel, labelRect, subtitleRect, radius := monitorSelectPanelLayout(
+	panel, labelRect, subtitleRect, radius := monitorselect.PanelLayout(
 		monitor, "A", "", style, 1,
 	)
 

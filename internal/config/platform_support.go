@@ -21,10 +21,8 @@ const (
 	noteVisionRectangles = "rectangle detection has no OCR answer, so it stays macOS-only " +
 		"even where the vision strategy lands; that half is text-only"
 	noteRecursiveGridAnimation = "the Windows overlay backend has no grid transition animation"
-	noteMonitorSelect          = "monitor_select needs the optional MonitorSelector overlay " +
-		"extension, which the Windows backend does not implement"
-	noteSmoothCursor = "cursor movement is not animated on Windows"
-	noteSmoothScroll = "the Windows scroll is injected in one step; macOS and Linux animate it, " +
+	noteSmoothCursor           = "cursor movement is not animated on Windows"
+	noteSmoothScroll           = "the Windows scroll is injected in one step; macOS and Linux animate it, " +
 		"and on X11 the steps are whole wheel notches because X has no smaller scroll to send"
 	noteKeyboardLayout = "the keyboard layout is detected rather than chosen outside macOS"
 	notePassthrough    = "unbound modifier chords reach the focused application on macOS and " +
@@ -172,30 +170,6 @@ func PlatformSupport() parity.Declaration {
 		parity.On(parity.KindOption, darwinAndLinux, noteRecursiveGridAnimation,
 			"recursive_grid.animation.enabled",
 			"recursive_grid.animation.duration_ms",
-		),
-
-		parity.On(parity.KindOption, darwinAndLinux, noteMonitorSelect,
-			"monitor_select.enabled",
-			"monitor_select.characters",
-			"monitor_select.ui.font_size",
-			"monitor_select.ui.font_family",
-			"monitor_select.ui.border_radius",
-			"monitor_select.ui.padding_x",
-			"monitor_select.ui.padding_y",
-			"monitor_select.ui.border_width",
-			"monitor_select.ui.subtitle_font_size",
-			"monitor_select.ui.subtitle_font_family",
-			"monitor_select.ui.background_color",
-			"monitor_select.ui.text_color",
-			"monitor_select.ui.matched_text_color",
-			"monitor_select.ui.border_color",
-			"monitor_select.ui.backdrop_color",
-			"monitor_select.ui.subtitle_text_color",
-			"mode_indicator.monitor_select.enabled",
-			"mode_indicator.monitor_select.text",
-			"mode_indicator.monitor_select.background_color",
-			"mode_indicator.monitor_select.text_color",
-			"mode_indicator.monitor_select.border_color",
 		),
 
 		parity.On(parity.KindOption, darwinAndLinux, noteSmoothCursor,
@@ -353,6 +327,17 @@ func PlatformSupport() parity.Declaration {
 			"scroll.app_configs.scroll_step_full",
 			"scroll.app_configs.hotkeys",
 
+			"monitor_select.enabled",
+			"monitor_select.characters",
+			"monitor_select.ui.font_size",
+			"monitor_select.ui.font_family",
+			"monitor_select.ui.border_radius",
+			"monitor_select.ui.padding_x",
+			"monitor_select.ui.padding_y",
+			"monitor_select.ui.border_width",
+			"monitor_select.ui.subtitle_font_size",
+			"monitor_select.ui.subtitle_font_family",
+
 			"mode_indicator.scroll.enabled",
 			"mode_indicator.scroll.text",
 			"mode_indicator.hints.enabled",
@@ -361,6 +346,8 @@ func PlatformSupport() parity.Declaration {
 			"mode_indicator.grid.text",
 			"mode_indicator.recursive_grid.enabled",
 			"mode_indicator.recursive_grid.text",
+			"mode_indicator.monitor_select.enabled",
+			"mode_indicator.monitor_select.text",
 			"mode_indicator.ui.font_size",
 			"mode_indicator.ui.font_family",
 			"mode_indicator.ui.border_width",
@@ -436,6 +423,13 @@ func PlatformSupport() parity.Declaration {
 			"mouse_action_indicator.ui.background_color",
 			"mouse_action_indicator.ui.border_color",
 
+			"monitor_select.ui.background_color",
+			"monitor_select.ui.text_color",
+			"monitor_select.ui.matched_text_color",
+			"monitor_select.ui.border_color",
+			"monitor_select.ui.backdrop_color",
+			"monitor_select.ui.subtitle_text_color",
+
 			"mode_indicator.scroll.background_color",
 			"mode_indicator.scroll.text_color",
 			"mode_indicator.scroll.border_color",
@@ -448,6 +442,9 @@ func PlatformSupport() parity.Declaration {
 			"mode_indicator.recursive_grid.background_color",
 			"mode_indicator.recursive_grid.text_color",
 			"mode_indicator.recursive_grid.border_color",
+			"mode_indicator.monitor_select.background_color",
+			"mode_indicator.monitor_select.text_color",
+			"mode_indicator.monitor_select.border_color",
 			"mode_indicator.ui.background_color",
 			"mode_indicator.ui.text_color",
 			"mode_indicator.ui.border_color",

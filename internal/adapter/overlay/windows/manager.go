@@ -49,6 +49,11 @@ type Manager struct {
 
 	// mouseWin is a small dedicated layered window for mouse action indicators.
 	mouseWin *winplatform.OverlayWindow
+
+	// monitorSelectWin spans every monitor the picker offers, which is why it is
+	// its own window rather than the shared one: that one is sized to the active
+	// monitor. Created lazily on first use, like the badges above.
+	monitorSelectWin *winplatform.OverlayWindow
 	// mouseActionCancel cancels any running mouse action animation.
 	mouseActionCancel context.CancelFunc
 }
@@ -123,6 +128,10 @@ func (m *Manager) Hide() {
 
 	if m.mouseWin != nil {
 		m.mouseWin.Hide()
+	}
+
+	if m.monitorSelectWin != nil {
+		m.monitorSelectWin.Hide()
 	}
 }
 
@@ -205,6 +214,11 @@ func (m *Manager) Destroy() {
 	if m.mouseWin != nil {
 		m.mouseWin.Destroy()
 		m.mouseWin = nil
+	}
+
+	if m.monitorSelectWin != nil {
+		m.monitorSelectWin.Destroy()
+		m.monitorSelectWin = nil
 	}
 }
 

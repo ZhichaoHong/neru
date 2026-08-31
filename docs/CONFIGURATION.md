@@ -1265,8 +1265,6 @@ hotkeys = { "k" = "action scroll_up", "j" = "action scroll_down" }
 
 Interactive display picking mode. Shows per-monitor overlay badges labelled with selectable characters. Monitors are sorted in a fixed spatial order (top-to-bottom, left-to-right).
 
-**Platforms:** macOS · Linux. Not implemented on Windows.
-
 | Option       | Type   | Default       | Description                        |
 | ------------ | ------ | ------------- | ---------------------------------- |
 | `enabled`    | bool   | `false`       | Enable interactive monitor picking |
@@ -1286,7 +1284,7 @@ Interactive display picking mode. Shows per-monitor overlay badges labelled with
 | `border_width`         | `0`           | Badge border width                |
 | `background_color`     | derived       | Badge fill color                  |
 | `text_color`           | derived       | Label text color                  |
-| `matched_text_color`   | derived       | Partially-typed label text color  |
+| `matched_text_color`   | derived       | Partially-typed label text color. No overlay backend draws the matched prefix in a second color yet, so this is accepted and unused on every platform |
 | `border_color`         | derived       | Badge border color                |
 | `backdrop_color`       | `""` (none)   | Per-monitor overlay backdrop tint |
 | `subtitle_text_color`  | derived       | Subtitle text color               |

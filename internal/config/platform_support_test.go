@@ -55,11 +55,6 @@ func TestPlatformSupport_DeclaresTheKnownNarrowColumns(t *testing.T) {
 			parity.Platforms{parity.Darwin, parity.Linux},
 		},
 		{
-			"monitor_select has no Windows overlay extension",
-			"monitor_select.enabled", "",
-			parity.Platforms{parity.Darwin, parity.Linux},
-		},
-		{
 			"smooth cursor is not animated on Windows",
 			"smooth_cursor.steps", "",
 			parity.Platforms{parity.Darwin, parity.Linux},
@@ -149,10 +144,13 @@ func TestInertWords_Options(t *testing.T) {
 			want:    nil,
 		},
 		{
-			name:    "a leaf below a color reports the color",
-			written: map[string]string{"monitor_select.ui.background_color.light": "#fff"},
+			// A Color's light and dark leaves are what this is for, but every
+			// narrow option is a plain leaf today, so the shape is exercised with
+			// an arbitrary path written below one.
+			name:    "a path below an option counts as writing the option",
+			written: map[string]string{"smooth_cursor.steps.light": "20"},
 			target:  parity.Windows,
-			want:    []string{"monitor_select.ui.background_color"},
+			want:    []string{"smooth_cursor.steps"},
 		},
 		{
 			name:    "an option inert only on Windows is silent on Linux",
