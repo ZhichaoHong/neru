@@ -2,6 +2,7 @@ package services_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"image"
 	"runtime"
@@ -698,8 +699,8 @@ func TestHintService_Health(t *testing.T) {
 	ctx := context.Background()
 	health := service.Health(ctx)
 
-	if len(health) != 2 {
-		t.Errorf("Health() returned %d entries, want 2", len(health))
+	if len(health) != 3 {
+		t.Errorf("Health() returned %d entries, want 3", len(health))
 	}
 
 	if _, ok := health["accessibility"]; !ok {
@@ -716,6 +717,46 @@ func TestHintService_Health(t *testing.T) {
 
 	if health["accessibility"] != nil {
 		t.Error("Health() accessibility should not have error")
+	}
+
+	// The service above was built with a nil vision port, which is a state the
+	// constructor accepts. It still has to report something, because a missing
+	// key reads as "not checked" rather than "unavailable".
+	if !derrors.IsNotSupported(health["vision"]) {
+		t.Errorf("Health() vision = %v with no vision port, want CodeNotSupported",
+			health["vision"])
+	}
+}
+
+// TestHintService_HealthReportsTheVisionPort is why the override exists. The
+// vision strategy has a per-machine prerequisite on two platforms - OCR language
+// data - and the notification that would otherwise carry that news goes through
+// ShowNotification, which is stubbed on Windows. `neru doctor` reading
+// hints.vision is the only surface a Windows user has, so the reason has to
+// arrive verbatim rather than as a generic failure.
+func TestHintService_HealthReportsTheVisionPort(t *testing.T) {
+	generator, _ := hint.NewAlphabetGenerator("abcd", hint.LabelDirectionReverse)
+
+	reason := derrors.New(derrors.CodeNotSupported, "no OCR language data installed")
+
+	mockVision := &mocks.MockVisionPort{
+		HealthFunc: func(_ context.Context) error { return reason },
+	}
+
+	service := services.NewHintService(
+		&mocks.MockAccessibilityPort{},
+		&mocks.MockOverlayPort{},
+		&mocks.MockSystemPort{},
+		generator,
+		config.HintsConfig{},
+		logger.Get(),
+		mockVision,
+	)
+
+	health := service.Health(context.Background())
+
+	if !errors.Is(health["vision"], reason) {
+		t.Errorf("Health() vision = %v, want the port's own reason %v", health["vision"], reason)
 	}
 }
 

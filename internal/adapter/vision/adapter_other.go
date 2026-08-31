@@ -1,4 +1,4 @@
-//go:build !darwin && !linux
+//go:build !darwin && !linux && !windows
 
 package vision
 
@@ -12,7 +12,9 @@ import (
 )
 
 // DetectElements reports not-supported on the platforms with no vision
-// implementation at all (Windows today).
+// implementation at all. Nothing neru releases builds through this file today:
+// darwin, linux and windows each have a real adapter, so this is what a freebsd
+// or openbsd build would compile.
 func (a *Adapter) DetectElements(
 	_ context.Context,
 	_ image.Rectangle,
@@ -25,8 +27,8 @@ func (a *Adapter) DetectElements(
 	)
 }
 
-// CaptureScreen reports not-supported: Windows has no capture backend here.
-// Linux does, in adapter_linux.go.
+// CaptureScreen reports not-supported: there is no capture backend on this
+// platform.
 func (a *Adapter) CaptureScreen(_ context.Context) (*image.RGBA, error) {
 	return nil, derrors.New(
 		derrors.CodeNotSupported,

@@ -203,10 +203,12 @@ func (h *handlerState) activateHintModeInternal(activation modecmd.Activation) {
 	// that update is invalidated in the same locked section, which is the line
 	// immediately before SetHints below.
 	//
-	// The clear is synchronous only as far as the window manager. A compositor
-	// may still be showing the last frame it composed, so whether the capture
-	// below can read a residual is a per-platform question, unmeasured on
-	// Windows. If one turns up, a settle delay belongs here.
+	// The clear is synchronous only as far as the window manager. A compositor may
+	// still be showing the last frame it composed, so whether the capture below can
+	// read a residual is a per-platform question. Windows cannot: its capture is a
+	// BitBlt without CAPTUREBLT, which reads no layered windows, and the overlay is
+	// one - the clear costs a redraw there and buys nothing. Where a residual does
+	// turn up, a settle delay belongs here.
 	if isRefresh && strategy == domain.StrategyVision {
 		h.clearOverlayFrameForRedraw()
 	}

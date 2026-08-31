@@ -103,7 +103,7 @@ const (
 	usageHideOnEmptySearch   = "Hide all hints when search query is empty (requires --search)"
 	usageRole                = "Filter by element role (comma-separated: button,link — the hints.clickable_roles vocabulary, see 'neru roles'). Repeat the flag to add more"
 	usageText                = "Filter elements by text content (comma-separated, case-insensitive substring match). Repeat the flag to add more"
-	usageStrategy            = "Element detection strategy: axtree (the platform accessibility tree) or vision (screen recognition: the Vision framework on macOS, tesseract OCR on Linux)"
+	usageStrategy            = "Element detection strategy: axtree (the platform accessibility tree) or vision (screen recognition: the Vision framework on macOS, tesseract on Linux, Windows.Media.Ocr on Windows)"
 	usageLabelDirection      = "Hint label enumeration: normal (default, prefix-avoidance, prefers shorter labels) or reverse (spreads labels across the alphabet)"
 	usageSplitWord           = "Split detected text into word-level regions (requires vision strategy)"
 	usageZoomToDepth         = "Auto-zoom to the given depth (a non-negative integer) in recursive-grid at the current cursor position"

@@ -50,8 +50,8 @@ func TestPlatformSupport_DeclaresTheKnownNarrowColumns(t *testing.T) {
 			parity.Platforms{parity.Darwin},
 		},
 		{
-			"the vision strategy is a value, not the option",
-			hintsStrategy, visionStrategy,
+			"Windows.Media.Ocr reports no per-word confidence to threshold",
+			"hints.vision.minimum_confidence", "",
 			parity.Platforms{parity.Darwin, parity.Linux},
 		},
 		{
@@ -81,20 +81,33 @@ func TestPlatformSupport_DeclaresTheKnownNarrowColumns(t *testing.T) {
 	}
 }
 
-// TestPlatformSupport_DeclaresTheOptionBehindAValue is the reason the strategy
-// option resolves at all on a platform with no vision engine: the option is
-// recognized everywhere and only one value of it is not.
-func TestPlatformSupport_DeclaresTheOptionBehindAValue(t *testing.T) {
+// TestPlatformSupport_DeclaresTheVisionStrategyEverywhere pins the widening that
+// Windows OCR earned. Every platform has an element-detection engine behind
+// `strategy = "vision"` now - the Vision framework, tesseract, Windows.Media.Ocr
+// - so neither the option nor its vision value carries a narrow column, and a
+// user who writes it gets no warning on any platform.
+//
+// It is asserted rather than left to the absence of a declaration because the
+// value used to be narrow: a revert that put the darwin-and-Linux column back
+// would otherwise only show up as a warning nobody expected.
+func TestPlatformSupport_DeclaresTheVisionStrategyEverywhere(t *testing.T) {
 	t.Parallel()
 
-	word, found := config.PlatformSupport().Lookup(parity.KindOption, hintsStrategy, "")
+	declaration := config.PlatformSupport()
+
+	word, found := declaration.Lookup(parity.KindOption, hintsStrategy, "")
 	if !found {
 		t.Fatal("hints.strategy itself is not declared")
 	}
 
 	if !word.Platforms.Everywhere() {
-		t.Errorf("hints.strategy is declared as %v; the option is written everywhere, "+
-			"and only its vision value is not", word.Platforms)
+		t.Errorf("hints.strategy is declared as %v, want every platform", word.Platforms)
+	}
+
+	if narrowed, found := declaration.Lookup(parity.KindOption, hintsStrategy, visionStrategy); found {
+		t.Errorf("hints.strategy = vision is declared as %v; every platform has an "+
+			"element-detection engine, so the value needs no column of its own",
+			narrowed.Platforms)
 	}
 }
 
@@ -126,20 +139,26 @@ func TestInertWords_Options(t *testing.T) {
 			want:    nil,
 		},
 		{
-			name:    "a value is reported only when it is the one declared",
+			// Windows was the last platform without an element-detection engine.
+			// Now that it has Windows.Media.Ocr, no declared value is narrower
+			// than its option anywhere, so the value-matching branch of
+			// inertOptions has no production declaration left to exercise; the
+			// mechanism itself is covered in domain/parity against a synthetic
+			// declaration.
+			name:    "the vision strategy is silent on every platform now",
 			written: map[string]string{hintsStrategy: visionStrategy},
-			target:  parity.Windows,
-			want:    []string{"hints.strategy = vision"},
-		},
-		{
-			name:    "the same option with another value is not reported",
-			written: map[string]string{hintsStrategy: "axtree"},
 			target:  parity.Windows,
 			want:    nil,
 		},
 		{
-			name:    "the vision strategy is silent on the platform that grew an engine",
-			written: map[string]string{hintsStrategy: visionStrategy},
+			name:    "an option Windows has no score for is reported there",
+			written: map[string]string{"hints.vision.minimum_confidence": "0.5"},
+			target:  parity.Windows,
+			want:    []string{"hints.vision.minimum_confidence"},
+		},
+		{
+			name:    "the same option is silent where a score exists",
+			written: map[string]string{"hints.vision.minimum_confidence": "0.5"},
 			target:  parity.Linux,
 			want:    nil,
 		},
@@ -218,28 +237,20 @@ func TestInertWords_Steps(t *testing.T) {
 			want:   nil,
 		},
 		{
-			name:   "a mode flag value with no engine is reported",
-			steps:  []string{"hints --strategy=vision"},
-			target: parity.Windows,
-			want:   []string{"--strategy=vision"},
-		},
-		{
-			name:   "the same flag with a supported value is not",
-			steps:  []string{"hints --strategy=axtree"},
+			// Every mode flag works on every platform now, --split-word and
+			// --strategy=vision included: Windows.Media.Ocr was the missing
+			// engine. So no mode command is reported anywhere, which is worth
+			// asserting on the two that used to be.
+			name:   "the vision flags are silent on the platform that grew an engine last",
+			steps:  []string{"hints --strategy=vision --split-word"},
 			target: parity.Windows,
 			want:   nil,
 		},
 		{
-			name:   "the same flag value is silent where an engine landed",
+			name:   "and on the platforms that had one already",
 			steps:  []string{"hints --strategy=vision --split-word"},
 			target: parity.Linux,
 			want:   nil,
-		},
-		{
-			name:   "a flag inert whatever its value is reported alongside one",
-			steps:  []string{"hints --strategy=vision --split-word"},
-			target: parity.Windows,
-			want:   []string{"--strategy=vision", "--split-word"},
 		},
 		{
 			name:   "a mode command with no narrow flag is silent",

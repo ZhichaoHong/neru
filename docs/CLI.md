@@ -104,8 +104,8 @@ Accepted by every command.
 ¹ Element discovery quality differs by platform: a full accessibility tree on
 macOS, an AT-SPI walk on Linux whose coverage depends on the application, and an
 initial shallow UI Automation walk on Windows. The `vision` strategy is the
-fallback where that tree is thin, on macOS and Linux; Windows has no engine for
-it. See [Accessibility and hints](CROSS_PLATFORM.md#accessibility-and-hints).
+fallback where that tree is thin, on all three, with a different engine behind it
+on each. See [Accessibility and hints](CROSS_PLATFORM.md#accessibility-and-hints).
 
 ² Two action subcommands are limited: `hide_cursor` and `show_cursor` are macOS
 only, and `scroll_left` / `scroll_right` have no effect on Windows. See
@@ -302,7 +302,7 @@ nothing.
 | `--hide-on-empty-search` |  | none | `hints` | Hide all hints when search query is empty (requires --search) |
 | `--role` |  | value, repeatable | `hints` | Filter by element role (comma-separated: button,link — the hints.clickable_roles vocabulary, see 'neru roles'). Repeat the flag to add more |
 | `--text` |  | value, repeatable | `hints` | Filter elements by text content (comma-separated, case-insensitive substring match). Repeat the flag to add more |
-| `--strategy` |  | value | `hints` | Element detection strategy: axtree (the platform accessibility tree) or vision (screen recognition: the Vision framework on macOS, tesseract OCR on Linux) |
+| `--strategy` |  | value | `hints` | Element detection strategy: axtree (the platform accessibility tree) or vision (screen recognition: the Vision framework on macOS, tesseract on Linux, Windows.Media.Ocr on Windows) |
 | `--label-direction` |  | value | `hints` | Hint label enumeration: normal (default, prefix-avoidance, prefers shorter labels) or reverse (spreads labels across the alphabet) |
 | `--split-word` |  | none | `hints` | Split detected text into word-level regions (requires vision strategy) |
 | `--zoom-to-depth` |  | value | `recursive_grid` | Auto-zoom to the given depth (a non-negative integer) in recursive-grid at the current cursor position |

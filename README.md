@@ -232,11 +232,11 @@ More modes, more engines, more platforms — and it's free. If you've been payin
 | Grid                      |  ✅   |  ✅   |   ✅    |
 | Vim-Style Scroll          |  ✅   |  ✅   |   ✅    |
 | Hints (Accessibility API) |  ✅   |  🔵   |   🔵    |
-| Hints (Vision OCR)        |  ✅   |  🔵   |   🔲    |
+| Hints (Vision OCR)        |  ✅   |  🔵   |   🔵    |
 | Direct Mouse Injection    |  ✅   |  ✅   |   ✅    |
 | Global Hotkeys            |  ✅   |  ✅   |   ✅    |
 | Native Overlays           |  ✅   |  ✅   |   ✅    |
-| Monitor Select            |  ✅   |  ✅   |   🔲    |
+| Monitor Select            |  ✅   |  ✅   |   ✅    |
 
 ✅ full · 🔵 works with limits · 🔲 not available
 
@@ -246,8 +246,11 @@ need `--force-renderer-accessibility`). Where that tree is too thin, Vision OCR
 is the fallback — tesseract, text only, and on KDE behind a one-time
 screen-sharing prompt, because KWin's only pixel source is the desktop portal.
 On **Windows**, UI Automation coverage is initial and the
-tree walk is shallow, per-app config does not re-apply when you change windows,
-and there is no OCR fallback at all. **Linux requires X11 or Wayland on
+tree walk is shallow, and per-app config does not re-apply when you change
+windows. Vision OCR is the fallback there too - `Windows.Media.Ocr`, text only,
+needing an OCR language feature installed and reporting no confidence score, so
+`minimum_confidence` does nothing and `button_min_confidence` defaults to `0`.
+**Linux requires X11 or Wayland on
 wlroots/KWin — GNOME Wayland is not supported**; use a GNOME X11 session.
 
 → [Roadmap](docs/ROADMAP.md) · [Cross-platform details](docs/CROSS_PLATFORM.md)

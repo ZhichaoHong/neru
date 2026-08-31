@@ -32,10 +32,10 @@ type classifierRoles struct {
 	Unknown string
 }
 
-// The per-vocabulary tables. Windows has no vision backend today
-// (adapter_other.go refuses), and its row exists anyway for the same reason
-// config's platform column carries one: a table that only covers the platforms
-// currently implemented cannot be told from a table somebody forgot to extend.
+// The per-vocabulary tables, one per platform with a vision backend. The UIA row
+// went in before the Windows adapter did, for the same reason config's platform
+// column carries every platform: a table that only covers what is implemented
+// cannot be told from a table somebody forgot to extend.
 var (
 	axClassifierRoles = classifierRoles{
 		Button:     "AXButton",

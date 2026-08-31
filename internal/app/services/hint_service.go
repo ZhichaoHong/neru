@@ -193,6 +193,42 @@ func (s *HintService) UpdateConfig(config config.HintsConfig) {
 		zap.Bool("include_screen_capture", config.IncludeScreenCaptureHints))
 }
 
+// Health adds the vision port to what BaseService already reports, so a machine
+// that cannot run the vision strategy says so in `neru doctor` under
+// hints.vision.
+//
+// This is VisionPort.Health's only caller, and it is load-bearing rather than a
+// nicety. The strategy has one per-machine prerequisite on two platforms - OCR
+// language data on Windows, tesseract language data on Linux - and the path that
+// would otherwise tell the user is notifyVisionUnavailable, which goes through
+// ShowNotification. That is stubbed on Windows, so the sentence is logged and
+// dropped there. Without this a user gets an empty overlay and no explanation
+// anywhere.
+//
+// No lock: s.vision is set once by the constructor and never reassigned, and
+// holding s.mu across a port call that can take milliseconds is how the vision
+// path deadlocked before.
+//
+// The nil check is real. NewHintService accepts a nil vision port, and the
+// darwin, linux and windows builds all pass one; a build without vision wired up
+// would otherwise panic inside a diagnostic.
+func (s *HintService) Health(ctx context.Context) map[string]error {
+	health := s.BaseService.Health(ctx)
+
+	if s.vision == nil {
+		health["vision"] = derrors.New(
+			derrors.CodeNotSupported,
+			"the vision strategy is unavailable: no vision backend is wired into this build",
+		)
+
+		return health
+	}
+
+	health["vision"] = s.vision.Health(ctx)
+
+	return health
+}
+
 // Generator returns the registered hint generator for the given label
 // direction. An empty direction resolves to the default generator. If no
 // generator exists for the requested direction the default is returned as a

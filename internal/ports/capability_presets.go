@@ -185,8 +185,15 @@ func WindowsCapabilities() PlatformCapabilities {
 			"native hint-search field not implemented yet; hint search falls back " +
 				"to the event tap's key stream",
 		),
-		Vision: stubCapability(
-			"no OCR/vision element detection; hints come from UI Automation only",
+		// Static, deliberately, exactly as the Linux entry above is: whether this
+		// machine has OCR language data installed is a runtime fact, and probing
+		// it here would cost a WinRT activation on every doctor and info call to
+		// duplicate what VisionPort.Health answers better. The detail names what
+		// can be missing per machine.
+		Vision: supportedCapability(
+			"vision element detection via Windows.Media.Ocr over a GDI screen " +
+				"capture; text only, with no rectangle detection and no confidence " +
+				"score; needs OCR language data for at least one language installed",
 		),
 		KeyFeed: stubCapability(
 			"key injection not implemented yet; target SendInput",

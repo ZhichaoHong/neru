@@ -195,8 +195,8 @@ that is what [Known Gaps](#known-gaps) tracks, per
 | **System cursor hide**        | ✅ `CGDisplayHideCursor` | ➖                     | ➖                           | ➖                      | ➖                           |
 | **`monitor_select` mode**     | ✅ native panels         | ✅ Cairo panels        | ✅ Cairo panels              | ✅ Cairo panels         | ✅ layered-window panels     |
 | **Native hint-search field**  | ✅ NSTextField overlay   | 🟡 key-stream input ⁵  | 🟡 key-stream input ⁵        | 🟡 key-stream input ⁵   | 🟡 key-stream input ⁵        |
-| **Screen capture**            | ✅ ScreenCaptureKit      | ✅ `XGetImage`         | ✅ `wlr-screencopy`          | ⚠️ portal ScreenCast, consent ⁶ | ❌                   |
-| **Vision / OCR detection**    | ✅ Vision framework      | ⚠️ tesseract, text only ⁷ | ⚠️ tesseract, text only ⁷ | ⚠️ tesseract, text only ⁷ | ❌                           |
+| **Screen capture**            | ✅ ScreenCaptureKit      | ✅ `XGetImage`         | ✅ `wlr-screencopy`          | ⚠️ portal ScreenCast, consent ⁶ | ✅ GDI `BitBlt` ¹¹   |
+| **Vision / OCR detection**    | ✅ Vision framework      | ⚠️ tesseract, text only ⁷ | ⚠️ tesseract, text only ⁷ | ⚠️ tesseract, text only ⁷ | ⚠️ `Windows.Media.Ocr`, text only ¹¹ |
 | **Key feed (`neru key`)**     | ✅ `CGEventPost`         | ✅ uinput               | ✅ uinput / virtual-keyboard | ✅ uinput               | 🟡 `CodeNotSupported`        |
 | **Service management (`neru services`)** | ✅ launchd user agent | ⚠️ systemd user unit only ³ | ⚠️ systemd user unit only ³ | ⚠️ systemd user unit only ³ | 🟡 `CodeNotSupported` |
 
@@ -343,15 +343,15 @@ region by the output's scale factor — the same thing a Retina capture does on
 macOS. The image's own bounds start at `(0, 0)`; the region passed in is what
 places those pixels.
 
-⁷ Linux `vision` is **text-only**, and permanently so. macOS runs three Vision
-requests — text recognition, rectangle detection and saliency — and an OCR
-engine answers the first. `hints.vision.detect_rectangles` and the four
-`rectangle_*` options are therefore declared macOS-only rather than met with a
-contour-detection library, which would be a heavy new required dependency for a
-sub-feature of a non-default strategy
-([ADR 0013](./adr/0013-parity-is-measured-in-words-not-subsystems.md)). The
-other fourteen `hints.vision.*` options are read on Linux exactly as they are on
-macOS.
+⁷ Linux `vision` is **text-only**, and permanently so - as is Windows, for the
+same reason. macOS runs three Vision requests - text recognition, rectangle
+detection and saliency - and an OCR engine answers the first.
+`hints.vision.detect_rectangles` and the four `rectangle_*` options are therefore
+declared macOS-only rather than met with a contour-detection library, which would
+be a heavy new required dependency for a sub-feature of a non-default strategy
+([ADR 0013](./adr/0013-parity-is-measured-in-words-not-subsystems.md)). The other
+fourteen `hints.vision.*` options are read on Linux exactly as they are on macOS;
+Windows reads thirteen of them, and footnote ¹¹ has the one it cannot.
 
 The engine is **tesseract**, linked through `#cgo pkg-config: tesseract` like
 every other native dependency here, and it is required rather than optional:
@@ -445,6 +445,47 @@ both Windows keys go out with `KEYEVENTF_EXTENDEDKEY`, which is the only thing
 that tells `VK_RCONTROL` from `VK_LCONTROL` once the virtual key has been
 resolved to a scancode. A drag holds its state from the press to the release
 through the same stash X11 uses.
+
+¹¹ **Windows capture and OCR are both first-party and both cgo-free.** The
+Windows build runs with `CGO_ENABLED=0`, so every call in this path is a
+`syscall`: capture is GDI (`BitBlt` into a DIB section, then `GetDIBits`), and
+recognition is `Windows.Media.Ocr` reached through `combase.dll` vtable dispatch
+rather than a binding library.
+
+Capture is a **region** operation with no consent gate, the same as X11 and
+wlroots: the caller's rectangle is what gets read back, so detection stays scoped
+to the focused window. `CAPTUREBLT` is deliberately not passed, and that is what
+keeps neru's own overlay out of the frame: without it a `BitBlt` reads no layered
+windows, and every overlay window is one. So a refresh never recognizes the hint
+labels from the frame before it, without depending on
+`hide_overlay_in_screen_share`, which is an opt-in for a different purpose.
+Windows delivers BGRA and the caller's contract is `*image.RGBA`, so the
+frame is swizzled in place, which costs about 8 ms on a 4K display and cannot be
+skipped: `VisionPort.CaptureScreen` hands the same image to callers that are not
+the OCR engine.
+
+**The language data is a separate install**, as it is on Linux, and it is
+resolved at use rather than at build time: Settings, Time & language, Language &
+region, then the optional OCR feature for a language. A machine with none gets
+`CodeNotSupported` naming what to install, from `VisionPort.Health` and from
+`DetectElements`, rather than a strategy that quietly finds nothing.
+
+**`Windows.Media.Ocr` reports no per-word confidence.** Not on `OcrWord`, not on
+`OcrLine`, not on `OcrResult` - there is no score to threshold, which is why
+`hints.vision.minimum_confidence` is declared macOS-and-Linux and is the
+thirteen-of-fourteen difference footnote ⁷ points at. Writing it on Windows is
+reported by `neru doctor` as an option that does nothing there.
+
+That has one footgun worth knowing, because the option it affects **is**
+supported. `hints.vision.button_min_confidence` is read on Windows, and every
+word arrives scoring 0, so **any value above 0 suppresses Button classification
+entirely** and those elements fall through to the generic clickable role. The
+Windows default is therefore `0` rather than the shared default. It is a default
+and not a clamp: a config that raises it is honored, measured at 82-92% of
+Buttons lost, and left alone.
+
+Recognized text is screen content and is treated the same way it is on Linux:
+never logged, never written to disk.
 
 ### Notes on the ⚠️ entries
 
@@ -746,15 +787,16 @@ put in force.
 | **Traversal**           | Full recursive walk of the AXUIElement hierarchy | Recursive walk of the active frame's subtree, depth/node capped | Shallow walk of root-level nodes |
 | **Sources collected**   | Frontmost + all windows, popovers, menubar, dock, notification center, Stage Manager, PIP | Active frame's subtree only          | Root element's children only         |
 | **Filtering**           | Role matching, size/position heuristics, excluded apps, dedup | Native AT-SPI roles, `SHOWING` state, on-screen extents | `IsControlElement` + `IsContentElement`, non-zero bounds |
-| **Strategies**          | `axtree` (default) and `vision`, incl. per-app overrides | `axtree` only                          | `axtree` only                        |
+| **Strategies**          | `axtree` (default) and `vision`, incl. per-app overrides | `axtree` (default) and `vision`, text only | `axtree` (default) and `vision`, text only |
 | **Popovers / menus**    | ✅ dedicated detection                      | ⚠️ only if inside the active frame's subtree       | 🟡                                   |
 
 macOS builds the richest tree by a wide margin: it walks multiple window and
 system sources, applies per-app strategy overrides, can fall back to the Vision
 framework for OCR-discovered targets, and deduplicates overlapping elements.
-Linux walks a single tree and has the OCR fallback beside it — tesseract, text
-only, selected with `hints.strategy = vision`. Windows walks a single tree with
-no fallback at all.
+Linux walks a single tree and has the OCR fallback beside it - tesseract, text
+only, selected with `hints.strategy = vision`. Windows is the same shape: a
+shallow walk of the root's children, with `Windows.Media.Ocr` beside it under the
+same option.
 
 **Linux is ⚠️, not a stub.** Hints genuinely work: `ATSPIClient` enables
 assistive-tech mode, finds the active frame, and walks it (`ClickableNodes`)
@@ -765,7 +807,8 @@ speak AT-SPI. This is the path the Linux adapter actually uses
 the `TreeNode` / `BuildTree` stub in `tree_linux.go` is the macOS-style tree API
 and is **not** on the Linux hints path. The ⚠️ is about coverage: it depends on
 each app exposing AT-SPI. Qt and GTK apps do with accessibility enabled; some
-toolkits expose almost nothing, and there is no Vision/OCR fallback.
+toolkits expose almost nothing, and the OCR strategy is not reached for
+automatically - a user has to select it.
 
 **Chromium and Electron apps on Linux.** Chromium-based apps (Chrome, Electron,
 forks such as Helium) do not expose their web-content tree over AT-SPI by
@@ -1033,31 +1076,12 @@ green in every cell while an option means nothing, which is exactly how
 | `app_configs.ignore_clickable_check` | option | ✅ | ❌ | ❌ | the clickable and visibility checks are AX-specific; the AT-SPI and UIA walks decide what is clickable their own way and never consult these |
 | `app_configs.visible_check_enabled` | option | ✅ | ❌ | ❌ | the clickable and visibility checks are AX-specific; the AT-SPI and UIA walks decide what is clickable their own way and never consult these |
 | `grid.prewarm_enabled` | option | ✅ | ❌ | ❌ | only the darwin grid overlay prewarms its layers; the other backends draw on demand |
-| `hints.vision.detect_text` | option | ✅ | ✅ | ❌ | the vision strategy needs an element-detection engine, which macOS has in the Vision framework and Linux in tesseract; Windows has neither, so it finds nothing there and none of its settings are read; use axtree |
-| `hints.vision.request_timeout_ms` | option | ✅ | ✅ | ❌ | the vision strategy needs an element-detection engine, which macOS has in the Vision framework and Linux in tesseract; Windows has neither, so it finds nothing there and none of its settings are read; use axtree |
-| `hints.vision.minimum_confidence` | option | ✅ | ✅ | ❌ | the vision strategy needs an element-detection engine, which macOS has in the Vision framework and Linux in tesseract; Windows has neither, so it finds nothing there and none of its settings are read; use axtree |
-| `hints.vision.merge_iou_threshold` | option | ✅ | ✅ | ❌ | the vision strategy needs an element-detection engine, which macOS has in the Vision framework and Linux in tesseract; Windows has neither, so it finds nothing there and none of its settings are read; use axtree |
-| `hints.vision.button_min_confidence` | option | ✅ | ✅ | ❌ | the vision strategy needs an element-detection engine, which macOS has in the Vision framework and Linux in tesseract; Windows has neither, so it finds nothing there and none of its settings are read; use axtree |
-| `hints.vision.button_min_aspect` | option | ✅ | ✅ | ❌ | the vision strategy needs an element-detection engine, which macOS has in the Vision framework and Linux in tesseract; Windows has neither, so it finds nothing there and none of its settings are read; use axtree |
-| `hints.vision.button_max_aspect` | option | ✅ | ✅ | ❌ | the vision strategy needs an element-detection engine, which macOS has in the Vision framework and Linux in tesseract; Windows has neither, so it finds nothing there and none of its settings are read; use axtree |
-| `hints.vision.button_icon_max_size` | option | ✅ | ✅ | ❌ | the vision strategy needs an element-detection engine, which macOS has in the Vision framework and Linux in tesseract; Windows has neither, so it finds nothing there and none of its settings are read; use axtree |
-| `hints.vision.link_min_aspect` | option | ✅ | ✅ | ❌ | the vision strategy needs an element-detection engine, which macOS has in the Vision framework and Linux in tesseract; Windows has neither, so it finds nothing there and none of its settings are read; use axtree |
-| `hints.vision.link_max_height` | option | ✅ | ✅ | ❌ | the vision strategy needs an element-detection engine, which macOS has in the Vision framework and Linux in tesseract; Windows has neither, so it finds nothing there and none of its settings are read; use axtree |
-| `hints.vision.link_min_width` | option | ✅ | ✅ | ❌ | the vision strategy needs an element-detection engine, which macOS has in the Vision framework and Linux in tesseract; Windows has neither, so it finds nothing there and none of its settings are read; use axtree |
-| `hints.vision.image_min_size` | option | ✅ | ✅ | ❌ | the vision strategy needs an element-detection engine, which macOS has in the Vision framework and Linux in tesseract; Windows has neither, so it finds nothing there and none of its settings are read; use axtree |
-| `hints.vision.checkbox_max_size` | option | ✅ | ✅ | ❌ | the vision strategy needs an element-detection engine, which macOS has in the Vision framework and Linux in tesseract; Windows has neither, so it finds nothing there and none of its settings are read; use axtree |
-| `hints.vision.generic_clickable_min_confidence` | option | ✅ | ✅ | ❌ | the vision strategy needs an element-detection engine, which macOS has in the Vision framework and Linux in tesseract; Windows has neither, so it finds nothing there and none of its settings are read; use axtree |
+| `hints.vision.minimum_confidence` | option | ✅ | ✅ | ❌ | Windows.Media.Ocr reports no per-word confidence, so there is no score to threshold; the Vision framework and tesseract both report one |
 | `hints.vision.detect_rectangles` | option | ✅ | ❌ | ❌ | rectangle detection has no OCR answer, so it stays macOS-only even where the vision strategy lands; that half is text-only |
 | `hints.vision.rectangle_max_candidates` | option | ✅ | ❌ | ❌ | rectangle detection has no OCR answer, so it stays macOS-only even where the vision strategy lands; that half is text-only |
 | `hints.vision.rectangle_min_size` | option | ✅ | ❌ | ❌ | rectangle detection has no OCR answer, so it stays macOS-only even where the vision strategy lands; that half is text-only |
 | `hints.vision.rectangle_min_aspect` | option | ✅ | ❌ | ❌ | rectangle detection has no OCR answer, so it stays macOS-only even where the vision strategy lands; that half is text-only |
 | `hints.vision.rectangle_max_aspect` | option | ✅ | ❌ | ❌ | rectangle detection has no OCR answer, so it stays macOS-only even where the vision strategy lands; that half is text-only |
-| `hints.strategy = vision` | option | ✅ | ✅ | ❌ | the vision strategy needs an element-detection engine, which macOS has in the Vision framework and Linux in tesseract; Windows has neither, so it finds nothing there and none of its settings are read; use axtree |
-| `hints.app_configs.strategy = vision` | option | ✅ | ✅ | ❌ | the vision strategy needs an element-detection engine, which macOS has in the Vision framework and Linux in tesseract; Windows has neither, so it finds nothing there and none of its settings are read; use axtree |
-| `grid.app_configs.strategy = vision` | option | ✅ | ✅ | ❌ | the vision strategy needs an element-detection engine, which macOS has in the Vision framework and Linux in tesseract; Windows has neither, so it finds nothing there and none of its settings are read; use axtree |
-| `recursive_grid.app_configs.strategy = vision` | option | ✅ | ✅ | ❌ | the vision strategy needs an element-detection engine, which macOS has in the Vision framework and Linux in tesseract; Windows has neither, so it finds nothing there and none of its settings are read; use axtree |
-| `scroll.app_configs.strategy = vision` | option | ✅ | ✅ | ❌ | the vision strategy needs an element-detection engine, which macOS has in the Vision framework and Linux in tesseract; Windows has neither, so it finds nothing there and none of its settings are read; use axtree |
-| `app_configs.strategy = vision` | option | ✅ | ✅ | ❌ | the vision strategy needs an element-detection engine, which macOS has in the Vision framework and Linux in tesseract; Windows has neither, so it finds nothing there and none of its settings are read; use axtree |
 | `recursive_grid.animation.enabled` | option | ✅ | ✅ | ❌ | the Windows overlay backend has no grid transition animation |
 | `recursive_grid.animation.duration_ms` | option | ✅ | ✅ | ❌ | the Windows overlay backend has no grid transition animation |
 | `smooth_cursor.move_mouse_enabled` | option | ✅ | ✅ | ❌ | cursor movement is not animated on Windows |
@@ -1069,8 +1093,6 @@ green in every cell while an option means nothing, which is exactly how
 | `smooth_scroll.steps` | option | ✅ | ✅ | ❌ | the Windows scroll is injected in one step; macOS and Linux animate it, and on X11 the steps are whole wheel notches because X has no smaller scroll to send |
 | `smooth_scroll.max_duration` | option | ✅ | ✅ | ❌ | the Windows scroll is injected in one step; macOS and Linux animate it, and on X11 the steps are whole wheel notches because X has no smaller scroll to send |
 | `smooth_scroll.duration_per_pixel` | option | ✅ | ✅ | ❌ | the Windows scroll is injected in one step; macOS and Linux animate it, and on X11 the steps are whole wheel notches because X has no smaller scroll to send |
-| `--split-word` | mode flag | ✅ | ✅ | ❌ | splitting detected text into words needs the vision strategy, which Windows has no engine for; there the flag is refused rather than ignored |
-| `--strategy=vision` | mode flag | ✅ | ✅ | ❌ | the vision strategy needs an element-detection engine, which macOS has in the Vision framework and Linux in tesseract; Windows has neither, so detection returns nothing and no hints appear; use axtree |
 | `hide_cursor` | action | ✅ | ❌ | ❌ | a Wayland client may not hide another client's cursor, and the blessed Linux stack is Wayland; Windows has no equivalent either |
 | `show_cursor` | action | ✅ | ❌ | ❌ | a Wayland client may not hide another client's cursor, and the blessed Linux stack is Wayland; Windows has no equivalent either |
 | `scroll_left` | action | ✅ | ✅ | ❌ | the Windows wheel event carries no horizontal delta, so a sideways scroll injects nothing |
@@ -1104,11 +1126,14 @@ exclusive: it is that backend's documented limit, which is what
 [ADR 0013](./adr/0013-parity-is-measured-in-words-not-subsystems.md) says the
 non-blessed stacks carry. The **Vision (OCR) hint
 strategy** was recorded as needing macOS-only `VNRequest` APIs; the API is
-macOS-only but the capability is not, so it is a Linux gap too — met by an OCR
-engine linked the way every other native dependency here is, with its language
-data resolved at use. Its rectangle-detection half has no OCR answer, so
+macOS-only but the capability is not, so it was a Linux gap too, and then a
+Windows one. Linux is met by an OCR engine linked the way every other native
+dependency here is; Windows by `Windows.Media.Ocr` over a GDI capture, reached
+through `combase.dll` because the Windows build takes no cgo. Both resolve their
+language data at use. The rectangle-detection half has no OCR answer anywhere, so
 `detect_rectangles` and the four `rectangle_*` options stay macOS-only and are
-declared as such.
+declared as such, and Windows also has no per-word confidence to threshold
+(footnote ¹¹ of the [Capability Matrix](#capability-matrix)).
 
 A third entry has since left. **Screen-sharing hide** was recorded as an NSWindow
 sharing level, a Quartz concept; the mechanism is, but the capability is a

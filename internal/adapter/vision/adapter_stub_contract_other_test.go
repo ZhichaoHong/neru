@@ -1,4 +1,4 @@
-//go:build !darwin && !linux
+//go:build !darwin && !linux && !windows
 
 package vision_test
 
@@ -14,18 +14,19 @@ import (
 
 // The vision adapter is fully stubbed on the platforms with neither half of
 // the port: no capture backend and no recognition engine, so every method
-// reports CodeNotSupported. Linux has capture and is pinned separately by
-// adapter_stub_contract_linux_test.go.
+// reports CodeNotSupported. darwin, linux and windows each implement it for real
+// and are pinned by their own adapter_stub_contract_*_test.go.
 //
 // Pinning that matters more than it looks. The hint pipeline chooses between
 // the accessibility strategy and the vision strategy at runtime, and it decides
 // vision is unavailable by calling Health and checking IsNotSupported. If a
-// stub here started returning nil — say a refactor gave Health a default
-// "return nil" — the pipeline would select the vision strategy here, then get
+// stub here started returning nil - say a refactor gave Health a default
+// "return nil" - the pipeline would select the vision strategy here, then get
 // an empty element list from DetectElements and show the user no hints at all,
 // with no error to explain why.
 //
-// Tagged !darwin && !linux, so this runs on the Windows CI runner.
+// No CI runner builds through this file. It exists so a freebsd or openbsd build
+// keeps a defensible answer rather than an accidental one.
 func TestVisionAdapter_AllMethodsReportNotSupportedOffDarwin(t *testing.T) {
 	adapter := vision.NewAdapter(nil)
 	ctx := context.Background()

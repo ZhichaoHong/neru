@@ -193,18 +193,25 @@ func (a *Adapter) CaptureScreen(_ context.Context) (*image.RGBA, error) {
 	return img, nil
 }
 
-// Health checks whether Vision Framework is available.
+// Health reports whether the vision strategy can run on this machine, which on
+// macOS it always can: the Vision framework ships with the OS and is linked into
+// this binary, so a build that starts has it. There is no per-machine
+// prerequisite the way there is on Linux and Windows, where the OCR language data
+// is a separate install.
+//
+// This used to smoke-test by taking a screen capture, which was defensible while
+// nothing called it. HintService.Health now does, on every `neru doctor` and
+// `neru info`, and a diagnostic that reads the user's entire screen to find out
+// whether it is able to read the screen is the wrong trade - it would also report
+// a missing Screen Recording grant as CodeInternal, when a permission is not a
+// capability. SystemPort.CheckScreenCapturePermission owns that question and asks
+// the user ahead of the activation, which is the same split the Linux adapter
+// documents.
 func (a *Adapter) Health(ctx context.Context) error {
 	select {
 	case <-ctx.Done():
 		return derrors.Wrap(ctx.Err(), derrors.CodeContextCanceled, "operation canceled")
 	default:
-	}
-
-	// Quick smoke test: attempt a screen capture
-	_, err := a.CaptureScreen(ctx)
-	if err != nil {
-		return derrors.Wrap(err, derrors.CodeInternal, "vision framework health check failed")
 	}
 
 	return nil

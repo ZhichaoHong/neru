@@ -16,9 +16,8 @@ const (
 	noteScreenShareHide = "hiding the overlay from a screen share needs a per-window capture " +
 		"exclusion, which macOS has in the NSWindow sharing level and Windows in " +
 		"SetWindowDisplayAffinity; X11 and Wayland have no counterpart"
-	noteVisionStrategy = "the vision strategy needs an element-detection engine, which " +
-		"macOS has in the Vision framework and Linux in tesseract; Windows has neither, " +
-		"so it finds nothing there and none of its settings are read; use axtree"
+	noteVisionConfidence = "Windows.Media.Ocr reports no per-word confidence, so there is " +
+		"no score to threshold; the Vision framework and tesseract both report one"
 	noteVisionRectangles = "rectangle detection has no OCR answer, so it stays macOS-only " +
 		"even where the vision strategy lands; that half is text-only"
 	noteRecursiveGridAnimation = "the Windows overlay backend has no grid transition animation"
@@ -39,23 +38,6 @@ const (
 	noteGridPrewarm = "only the darwin grid overlay prewarms its layers; the other backends " +
 		"draw on demand"
 )
-
-// visionStrategy is the value of the strategy option that selects the vision
-// engine. The option itself is recognized everywhere; this one value is not.
-const visionStrategy = "vision"
-
-// strategyOptions are every path the strategy option is written at: the hints
-// section and the four per-app override tables that shadow it, plus the
-// top-level one. A value declared on one and forgotten on the others would warn
-// about a config file and stay silent about the same setting written per app.
-var strategyOptions = []string{
-	"hints.strategy",
-	"hints.app_configs.strategy",
-	"grid.app_configs.strategy",
-	"recursive_grid.app_configs.strategy",
-	"scroll.app_configs.strategy",
-	"app_configs.strategy",
-}
 
 // darwinOnly, darwinAndLinux and darwinAndWindows are the narrow columns this
 // schema uses today, named so a reader compares two options by the same words.
@@ -141,21 +123,14 @@ func PlatformSupport() parity.Declaration {
 			"grid.prewarm_enabled",
 		),
 
-		parity.On(parity.KindOption, darwinAndLinux, noteVisionStrategy,
-			"hints.vision.detect_text",
-			"hints.vision.request_timeout_ms",
+		// The vision strategy has an element-detection engine on all three
+		// platforms now: the Vision framework, tesseract, and Windows.Media.Ocr.
+		// So the text half's options are declared everywhere, in the block below,
+		// and only the two gaps that survive are narrow - the confidence score
+		// Windows has no number for, and rectangle detection, which no OCR engine
+		// answers.
+		parity.On(parity.KindOption, darwinAndLinux, noteVisionConfidence,
 			"hints.vision.minimum_confidence",
-			"hints.vision.merge_iou_threshold",
-			"hints.vision.button_min_confidence",
-			"hints.vision.button_min_aspect",
-			"hints.vision.button_max_aspect",
-			"hints.vision.button_icon_max_size",
-			"hints.vision.link_min_aspect",
-			"hints.vision.link_max_height",
-			"hints.vision.link_min_width",
-			"hints.vision.image_min_size",
-			"hints.vision.checkbox_max_size",
-			"hints.vision.generic_clickable_min_confidence",
 		),
 		parity.On(parity.KindOption, darwinOnly, noteVisionRectangles,
 			"hints.vision.detect_rectangles",
@@ -163,9 +138,6 @@ func PlatformSupport() parity.Declaration {
 			"hints.vision.rectangle_min_size",
 			"hints.vision.rectangle_min_aspect",
 			"hints.vision.rectangle_max_aspect",
-		),
-		parity.ValueOn(parity.KindOption, darwinAndLinux, noteVisionStrategy,
-			visionStrategy, strategyOptions...,
 		),
 
 		parity.On(parity.KindOption, darwinAndLinux, noteRecursiveGridAnimation,
@@ -240,6 +212,20 @@ func PlatformSupport() parity.Declaration {
 			"hints.app_configs.scroll_step_half",
 			"hints.app_configs.scroll_step_full",
 			"hints.app_configs.hotkeys",
+
+			"hints.vision.detect_text",
+			"hints.vision.request_timeout_ms",
+			"hints.vision.merge_iou_threshold",
+			"hints.vision.button_min_confidence",
+			"hints.vision.button_min_aspect",
+			"hints.vision.button_max_aspect",
+			"hints.vision.button_icon_max_size",
+			"hints.vision.link_min_aspect",
+			"hints.vision.link_max_height",
+			"hints.vision.link_min_width",
+			"hints.vision.image_min_size",
+			"hints.vision.checkbox_max_size",
+			"hints.vision.generic_clickable_min_confidence",
 
 			"grid.enabled",
 			"grid.characters",

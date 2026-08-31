@@ -28,8 +28,9 @@ var HintsCmd = BuildModeCommand(ModeConfig{
     --text "Submit,Cancel"        Only hint elements containing "Submit" or "Cancel"
 
   Use --strategy vision to detect elements by recognizing what is on screen
-  instead of walking the accessibility tree — the Vision framework on macOS,
-  tesseract OCR on Linux, where it finds text only. Not available on Windows.
+  instead of walking the accessibility tree - the Vision framework on macOS,
+  tesseract on Linux, Windows.Media.Ocr on Windows. Off macOS it finds text
+  only, and both OCR platforms need language data installed.
 
   Use --split-word to split detected text into word-level regions (requires
   vision strategy).
