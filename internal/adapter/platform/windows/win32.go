@@ -46,6 +46,11 @@ type displayDevice struct {
 type displayMonitor struct {
 	name   string
 	bounds image.Rectangle
+
+	// device is the GDI device name (`\\.\DISPLAY1`). It is the identity
+	// Windows guarantees is unique, which is what disambiguateMonitorNames
+	// falls back to when two monitors report the same friendly name.
+	device string
 }
 
 type winPoint struct {
@@ -249,6 +254,7 @@ func collectMonitor(hMonitor uintptr, _ uintptr, _ uintptr, _ uintptr) uintptr {
 	monitorEnumTarget.monitors = append(monitorEnumTarget.monitors, displayMonitor{
 		name:   monitorFriendlyName(deviceName),
 		bounds: rectToImage(info.rcMonitor),
+		device: deviceName,
 	})
 
 	return 1
@@ -264,7 +270,62 @@ func enumerateMonitors() ([]displayMonitor, error) {
 		return nil, errNoMonitors
 	}
 
+	disambiguateMonitorNames(monitors)
+
 	return monitors, nil
+}
+
+// disambiguateMonitorNames makes every monitor's name unique in place.
+//
+// SystemPort keys a screen by its name: ScreenBoundsByName answers with the
+// bounds of "the screen with the given name", and ScreenNames is the list
+// callers pick that name from. Windows honors neither half on its own. The
+// friendly name comes from the EDID, two monitors of the same model report the
+// same string, and an unbranded panel reports "Generic PnP Monitor" — so a
+// two-monitor desk can hand out one name twice, and the by-name lookup answers
+// with the first match for both. monitor_select showed exactly that: two
+// targets, one set of bounds, both panels stacked on the primary.
+//
+// The GDI device name is unique, so it settles the tie. Only a repeated name is
+// suffixed, which keeps the usual single-name-per-monitor case reading the way
+// the display's own label does.
+func disambiguateMonitorNames(monitors []displayMonitor) {
+	counts := make(map[string]int, len(monitors))
+	for _, monitor := range monitors {
+		counts[strings.ToLower(monitor.name)]++
+	}
+
+	for i := range monitors {
+		if counts[strings.ToLower(monitors[i].name)] < 2 {
+			continue
+		}
+
+		monitors[i].name = fmt.Sprintf(
+			"%s (%s)",
+			monitors[i].name,
+			displayDeviceTag(monitors[i].device, i),
+		)
+	}
+}
+
+// displayDeviceTag is the short form of a GDI device name used to tell two
+// same-named monitors apart: `\\.\DISPLAY6` reads as `DISPLAY6`.
+//
+// The enumeration index is the fallback for a device name that is empty or
+// carries no tail, because a suffix that repeats would leave the two names
+// colliding, which is the whole thing this avoids.
+func displayDeviceTag(device string, index int) string {
+	tag := device
+	if cut := strings.LastIndex(tag, `\`); cut >= 0 {
+		tag = tag[cut+1:]
+	}
+
+	tag = strings.TrimSpace(tag)
+	if tag == "" {
+		return fmt.Sprintf("#%d", index+1)
+	}
+
+	return tag
 }
 
 // runMonitorEnumeration performs one EnumDisplayMonitors pass and returns the
