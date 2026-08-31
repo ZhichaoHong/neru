@@ -26,6 +26,23 @@ type recognizedWord struct {
 	Confidence float64
 }
 
+// Geometric floor for recognized words, applied in screen space so it means the
+// same thing on a 1x and a 2x output.
+//
+// OCR segmentation reports non-text pixels as text: a window border comes back
+// as a 5x1 hyphen, a separator as a 2x18 capital I. Those were 4% of words on a
+// Win32 dialog and 12% on a WebView2 app. Engines that report per-word
+// confidence let hints.vision.minimum_confidence filter them; Windows.Media.Ocr
+// reports none, so geometry has to.
+//
+// The headroom is thinner than it looks. Legitimate text is 9px tall on a Win32
+// dialog at 1x, so this floor sits well under real text while still clearing
+// every junk rect measured.
+const (
+	minWordHeight = 4
+	minWordWidth  = 3
+)
+
 // regionsFromWords maps recognized words onto Neru's shared coordinate space
 // and drops the findings that are not worth a hint.
 //
@@ -75,6 +92,10 @@ func regionsFromWords(
 		).Intersect(region)
 
 		if bounds.Empty() {
+			continue
+		}
+
+		if bounds.Dy() < minWordHeight || bounds.Dx() < minWordWidth {
 			continue
 		}
 

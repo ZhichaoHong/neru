@@ -92,10 +92,10 @@ func (c *regionClassifier) isLikelyButton(aspectRatio, score, width, height floa
 		maxAspect = c.cfg.ButtonMaxAspect
 	}
 
-	minConf := 0.3
-	if c.cfg.ButtonMinConfidence > 0 {
-		minConf = c.cfg.ButtonMinConfidence
-	}
+	// Read straight from config, with no zero-means-unset fallback: 0 disables
+	// the gate, which is what a source reporting no confidence needs, and
+	// config_defaults.go already fills the field for every platform.
+	minConf := c.cfg.ButtonMinConfidence
 
 	maxIconSize := 48
 	if c.cfg.ButtonIconMaxSize > 0 {
@@ -212,18 +212,43 @@ func intersectionOverUnion(pointA, pointB image.Rectangle) float64 {
 	return math.Round(intersectArea/unionArea*100) / 100 //nolint:mnd
 }
 
-// sortRegionsByScore sorts regions descending by Score using a simple
+// sortRegionsByScore ranks regions for non-maximum suppression using a simple
 // insertion sort (n is typically very small, < 100).
 func sortRegionsByScore(regions []DetectedRegion) {
 	for i := 1; i < len(regions); i++ {
 		key := regions[i]
 
 		insertPos := i - 1
-		for insertPos >= 0 && regions[insertPos].Score < key.Score {
+		for insertPos >= 0 && regionOutranks(key, regions[insertPos]) {
 			regions[insertPos+1] = regions[insertPos]
 			insertPos--
 		}
 
 		regions[insertPos+1] = key
 	}
+}
+
+// regionOutranks reports whether a survives non-maximum suppression against b.
+//
+// Score first, then area, then top-left. The tiebreaks matter because a source
+// that reports no confidence scores every region 0, and score alone would then
+// leave the survivor of an overlapping pair decided by the order the OCR engine
+// happened to emit them in.
+func regionOutranks(a, b DetectedRegion) bool {
+	if a.Score != b.Score {
+		return a.Score > b.Score
+	}
+
+	areaA := a.Bounds.Dx() * a.Bounds.Dy()
+
+	areaB := b.Bounds.Dx() * b.Bounds.Dy()
+	if areaA != areaB {
+		return areaA > areaB
+	}
+
+	if a.Bounds.Min.Y != b.Bounds.Min.Y {
+		return a.Bounds.Min.Y < b.Bounds.Min.Y
+	}
+
+	return a.Bounds.Min.X < b.Bounds.Min.X
 }
