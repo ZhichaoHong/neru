@@ -192,6 +192,25 @@ func (h *handlerState) activateHintModeInternal(activation modecmd.Activation) {
 		return
 	}
 
+	// A refresh under a screen-reading strategy gives up the flash-free redraw the
+	// refresh path is built around: the labels it is replacing come back as
+	// targets of their own, and they cover what they point at, so that content is
+	// not in the frame at all. Axtree asks the accessibility tree, which cannot
+	// see the overlay, and keeps its labels up as before.
+	//
+	// clearOverlayFrameForRedraw, not clearOverlayFrame: the mode is live and its
+	// debounce may still fire, so hintsFrameOnScreen may only be cleared where
+	// that update is invalidated in the same locked section, which is the line
+	// immediately before SetHints below.
+	//
+	// The clear is synchronous only as far as the window manager. A compositor
+	// may still be showing the last frame it composed, so whether the capture
+	// below can read a residual is a per-platform question, unmeasured on
+	// Windows. If one turns up, a settle delay belongs here.
+	if isRefresh && strategyReadsTheScreen(strategy) {
+		h.clearOverlayFrameForRedraw()
+	}
+
 	domainHints, domainHintsErr := h.hintService.GenerateHints(
 		ctx,
 		activation.FilterRoles,
@@ -310,11 +329,18 @@ func (h *handlerState) activateHintModeInternal(activation modecmd.Activation) {
 	h.startIndicatorPolling(domain.ModeHints)
 }
 
+// strategyReadsTheScreen reports whether a strategy finds its targets in the
+// window's pixels. Vision and contour do; axtree never touches the screen.
+// Everything that follows from reading pixels is asked here: the
+// screen-recording permission, and whether the overlay has to come down first.
+func strategyReadsTheScreen(strategy string) bool {
+	return strategy == domain.StrategyVision || strategy == domain.StrategyContour
+}
+
 // needsScreenCapturePermission reports whether a screen-capture strategy is
-// blocked on the screen-recording permission. Vision and contour both read the
-// window's pixels, so both pay the gate. Axtree never touches the screen.
+// blocked on the screen-recording permission.
 func (h *handlerState) needsScreenCapturePermission(strategy string) bool {
-	if strategy != domain.StrategyVision && strategy != domain.StrategyContour {
+	if !strategyReadsTheScreen(strategy) {
 		return false
 	}
 
