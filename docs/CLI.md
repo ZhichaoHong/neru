@@ -103,9 +103,10 @@ Accepted by every command.
 
 ¹ Element discovery quality differs by platform: a full accessibility tree on
 macOS, an AT-SPI walk on Linux whose coverage depends on the application, and an
-initial shallow UI Automation walk on Windows. The `vision` strategy is the
-fallback where that tree is thin, on all three, with a different engine behind it
-on each. See [Accessibility and hints](CROSS_PLATFORM.md#accessibility-and-hints).
+initial shallow UI Automation walk on Windows. The `vision` and `hybrid`
+strategies are the fallback where that tree is thin, on all three, with a
+different recognition engine behind them on each. See
+[Accessibility and hints](CROSS_PLATFORM.md#accessibility-and-hints).
 
 ² Two action subcommands are limited: `hide_cursor` and `show_cursor` are macOS
 only, and `scroll_left` / `scroll_right` have no effect on Windows. See
@@ -302,9 +303,9 @@ nothing.
 | `--hide-on-empty-search` |  | none | `hints` | Hide all hints when search query is empty (requires --search) |
 | `--role` |  | value, repeatable | `hints` | Filter by element role (comma-separated: button,link — the hints.clickable_roles vocabulary, see 'neru roles'). Repeat the flag to add more |
 | `--text` |  | value, repeatable | `hints` | Filter elements by text content (comma-separated, case-insensitive substring match). Repeat the flag to add more |
-| `--strategy` |  | value | `hints` | Element detection strategy: axtree (the platform accessibility tree) or vision (screen recognition: the Vision framework on macOS, tesseract on Linux, Windows.Media.Ocr on Windows) |
+| `--strategy` |  | value | `hints` | Element detection strategy: axtree (the platform accessibility tree), vision (screen recognition: the Vision framework on macOS, tesseract on Linux, Windows.Media.Ocr on Windows), or hybrid (both, with the tree winning any overlap) |
 | `--label-direction` |  | value | `hints` | Hint label enumeration: normal (default, prefix-avoidance, prefers shorter labels) or reverse (spreads labels across the alphabet) |
-| `--split-word` |  | none | `hints` | Split detected text into word-level regions (requires vision strategy) |
+| `--split-word` |  | none | `hints` | Split detected text into word-level regions (requires the vision or hybrid strategy) |
 | `--zoom-to-depth` |  | value | `recursive_grid` | Auto-zoom to the given depth (a non-negative integer) in recursive-grid at the current cursor position |
 | `--cursor-selection-mode` |  | value | `hints` · `grid` · `recursive_grid` | How the real cursor should behave during selection: follow or hold |
 
@@ -347,10 +348,14 @@ neru hints [flags]
 Scans the focused window for interactive elements and overlays a short letter
 label on each. Typing a label selects that element.
 
-Element discovery uses the `axtree` strategy by default. The `vision` strategy
-is macOS-only and detects on-screen text and rectangles via the Vision
-framework. Coverage per platform is documented in
-[CROSS_PLATFORM.md](CROSS_PLATFORM.md#accessibility-and-hints).
+Element discovery uses the `axtree` strategy by default. `vision` detects
+elements by recognizing what is on screen instead, and `hybrid` does both and
+merges them with the tree winning any overlap. All three work on all three
+platforms, with a different recognition engine behind the screen-reading ones on
+each; coverage per platform is documented in
+[CROSS_PLATFORM.md](CROSS_PLATFORM.md#accessibility-and-hints) and the choice
+between them in
+[CONFIGURATION.md](CONFIGURATION.md#choosing-a-strategy).
 
 **Flags** — every flag listed for `hints` in the
 [mode flag reference](#mode-flag-reference), plus the probe below.

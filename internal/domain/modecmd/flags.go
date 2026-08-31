@@ -74,7 +74,7 @@ const (
 	msgOnExitValue              = "--on-exit requires a value"
 	msgRoleValue                = "--role requires a value (use comma-separated: --role=button,link)"
 	msgTextValue                = "--text requires a value (use comma-separated: --text=foo,bar)"
-	msgStrategyValue            = "--strategy requires axtree or vision"
+	msgStrategyValue            = "--strategy requires axtree, vision or hybrid"
 	msgLabelDirectionValue      = "--label-direction requires normal or reverse"
 	msgZoomToDepthValue         = "--zoom-to-depth requires a non-negative integer"
 	msgCursorSelectionModeValue = "--cursor-selection-mode requires follow or hold"
@@ -103,9 +103,9 @@ const (
 	usageHideOnEmptySearch   = "Hide all hints when search query is empty (requires --search)"
 	usageRole                = "Filter by element role (comma-separated: button,link — the hints.clickable_roles vocabulary, see 'neru roles'). Repeat the flag to add more"
 	usageText                = "Filter elements by text content (comma-separated, case-insensitive substring match). Repeat the flag to add more"
-	usageStrategy            = "Element detection strategy: axtree (the platform accessibility tree) or vision (screen recognition: the Vision framework on macOS, tesseract on Linux, Windows.Media.Ocr on Windows)"
+	usageStrategy            = "Element detection strategy: axtree (the platform accessibility tree), vision (screen recognition: the Vision framework on macOS, tesseract on Linux, Windows.Media.Ocr on Windows), or hybrid (both, with the tree winning any overlap)"
 	usageLabelDirection      = "Hint label enumeration: normal (default, prefix-avoidance, prefers shorter labels) or reverse (spreads labels across the alphabet)"
-	usageSplitWord           = "Split detected text into word-level regions (requires vision strategy)"
+	usageSplitWord           = "Split detected text into word-level regions (requires the vision or hybrid strategy)"
 	usageZoomToDepth         = "Auto-zoom to the given depth (a non-negative integer) in recursive-grid at the current cursor position"
 )
 
@@ -565,7 +565,9 @@ func Lookup(name Flag) (Descriptor, bool) {
 // nothing, so it has an argument list of its own. Reading the vocabulary from
 // here is what stops the two from disagreeing about what "axtree" means.
 func ParseStrategy(value string) (string, error) {
-	if value != domain.StrategyAXTree && value != domain.StrategyVision {
+	switch value {
+	case domain.StrategyAXTree, domain.StrategyVision, domain.StrategyHybrid:
+	default:
 		return "", invalid(msgStrategyValue)
 	}
 

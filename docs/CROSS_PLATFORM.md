@@ -787,7 +787,7 @@ put in force.
 | **Traversal**           | Full recursive walk of the AXUIElement hierarchy | Recursive walk of the active frame's subtree, depth/node capped | Shallow walk of root-level nodes |
 | **Sources collected**   | Frontmost + all windows, popovers, menubar, dock, notification center, Stage Manager, PIP | Active frame's subtree only          | Root element's children only         |
 | **Filtering**           | Role matching, size/position heuristics, excluded apps, dedup | Native AT-SPI roles, `SHOWING` state, on-screen extents | `IsControlElement` + `IsContentElement`, non-zero bounds |
-| **Strategies**          | `axtree` (default) and `vision`, incl. per-app overrides | `axtree` (default) and `vision`, text only | `axtree` (default) and `vision`, text only |
+| **Strategies**          | `axtree` (default), `vision` and `hybrid`, incl. per-app overrides | `axtree` (default), `vision` and `hybrid`, text only | `axtree` (default), `vision` and `hybrid`, text only |
 | **Popovers / menus**    | ✅ dedicated detection                      | ⚠️ only if inside the active frame's subtree       | 🟡                                   |
 
 macOS builds the richest tree by a wide margin: it walks multiple window and
@@ -797,6 +797,14 @@ Linux walks a single tree and has the OCR fallback beside it - tesseract, text
 only, selected with `hints.strategy = vision`. Windows is the same shape: a
 shallow walk of the root's children, with `Windows.Media.Ocr` beside it under the
 same option.
+
+**All three take `hints.strategy = hybrid`**, which runs the tree walk and the
+recognition on every activation and merges them, the tree winning any overlap.
+The merge is platform-neutral - it reads `element.IsVisionOnly()` and rectangles,
+nothing platform-specific - so the three differ only in how good each half is.
+Where the tree is thin, plain `vision` stays the honest diagnostic: on Linux and
+Windows it returns recognized text and no tree contribution at all, by
+construction.
 
 **Linux is ⚠️, not a stub.** Hints genuinely work: `ATSPIClient` enables
 assistive-tech mode, finds the active frame, and walks it (`ClickableNodes`)

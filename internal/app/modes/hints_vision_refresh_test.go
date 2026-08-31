@@ -46,6 +46,13 @@ func TestActivateHints_RefreshClearsTheOverlayOnlyForVision(t *testing.T) {
 			wantOrder: []string{"clear", "ax", "vision"},
 		},
 		{
+			name:     "hybrid clears too, because it reads the screen as well",
+			strategy: domain.StrategyHybrid,
+			// Same order: the tree walk is wider under hybrid, but the clear
+			// still has to come before anything captures.
+			wantOrder: []string{"clear", "ax", "vision"},
+		},
+		{
 			name:      "ax tree keeps its labels",
 			strategy:  domain.StrategyAXTree,
 			wantOrder: []string{"ax"},

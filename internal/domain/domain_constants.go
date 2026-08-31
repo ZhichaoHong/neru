@@ -75,7 +75,24 @@ const (
 
 	// StrategyVision detects elements from the screen image instead.
 	StrategyVision = "vision"
+
+	// StrategyHybrid does both and merges the two sets, with the accessibility
+	// tree winning every overlap.
+	StrategyHybrid = "hybrid"
 )
+
+// StrategyReadsScreen reports whether a strategy captures the screen, which is
+// what decides three things a caller cannot answer from the value alone: whether
+// the screen-recording permission is a prerequisite, whether a refresh has to
+// take the overlay down before the capture, and whether --split-word means
+// anything.
+//
+// It exists so those three sites cannot drift apart. Each was a comparison
+// against StrategyVision, and each was wrong the moment a second screen-reading
+// strategy existed.
+func StrategyReadsScreen(strategy string) bool {
+	return strategy == StrategyVision || strategy == StrategyHybrid
+}
 
 // Hint label enumeration orders, the values hints.label_direction accepts.
 const (

@@ -770,7 +770,7 @@ Explicit component colors override theme derivation. Omitted colors inherit from
 
 ## [hints]
 
-Labels clickable UI elements with short overlay labels. By default uses the platform accessibility tree (`axtree` strategy). Optionally uses on-screen recognition (`vision` strategy) for apps whose accessibility tree is too thin to hint from — detects elements from a screen capture scoped to the focused window, through the Vision framework on macOS (text plus rectangles), tesseract on Linux and `Windows.Media.Ocr` on Windows (text only on both).
+Labels clickable UI elements with short overlay labels. By default uses the platform accessibility tree (`axtree` strategy). Optionally uses on-screen recognition (`vision` strategy) for apps whose accessibility tree is too thin to hint from - detects elements from a screen capture scoped to the focused window, through the Vision framework on macOS (text plus rectangles), tesseract on Linux and `Windows.Media.Ocr` on Windows (text only on both). The `hybrid` strategy runs both and merges them, which is the one to reach for when a tree is partly usable rather than useless.
 
 Press `/` to text-search elements. `Space` for multi-word queries. `Return` confirms filtered hints (first is auto-selected). `Escape` cancels search.
 
@@ -781,7 +781,7 @@ Start with search visible: `neru hints --search` (see [CLI.md](CLI.md#neru-hints
 | Option                             | Type         | Default                 | Description                                                                                                                                                                                                                                                                                                                          |
 | ---------------------------------- | ------------ | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `enabled`                          | bool         | `true`                  | Enable/disable hints mode                                                                                                                                                                                                                                                                                                            |
-| `strategy`                         | string       | `"axtree"`              | Element detection strategy: `"axtree"` (the platform accessibility tree) or `"vision"` (screen recognition: the Vision framework on macOS, tesseract on Linux, `Windows.Media.Ocr` on Windows). Vision mode detects the frontmost window content from a screen capture while still using the accessibility tree for system elements (menubar, dock, NC). Overridable per-app via `[hints.app_configs]`. |
+| `strategy`                         | string       | `"axtree"`              | Element detection strategy: `"axtree"` (the platform accessibility tree), `"vision"` (screen recognition: the Vision framework on macOS, tesseract on Linux, `Windows.Media.Ocr` on Windows) or `"hybrid"` (both, merged). Vision detects the frontmost window content from a screen capture while still using the accessibility tree for system elements (menubar, dock, NC); hybrid walks the window tree as well and drops the recognized regions the tree already answered for. Overridable per-app via `[hints.app_configs]`. See [Choosing a strategy](#choosing-a-strategy) below. |
 | `hint_characters`                  | string       | `"asdfghjkl"`           | Characters used for labels                                                                                                                                                                                                                                                                                                           |
 | `label_direction`                  | string       | `"normal"`              | Hint label algorithm: `"normal"` (default, prefix-avoidance greedy) or `"reverse"` (reverse-order tiers). Empty value defaults to `"normal"`. Overridable per-app via `[hints.app_configs]` and per-activation via the `neru hints --label-direction` CLI flag. See [Choosing a label direction](#choosing-a-label-direction) below. |
 | `max_depth`                        | int          | `50`                    | Max accessibility tree depth (0 = unlimited)                                                                                                                                                                                                                                                                                         |
@@ -1012,6 +1012,26 @@ checkbox_max_size = 32
 generic_clickable_min_confidence = 0.5
 ```
 
+### Choosing a strategy
+
+Three values, and the useful distinction between them is what happens to the focused window rather than what engine runs.
+
+| Strategy           | The focused window                        | System chrome (menubar, dock, NC) | Cost                                     |
+| ------------------ | ----------------------------------------- | --------------------------------- | ---------------------------------------- |
+| `axtree` (default) | accessibility tree                        | accessibility tree                | one tree walk                            |
+| `vision`           | screen recognition only                    | accessibility tree                | one capture plus one OCR pass            |
+| `hybrid`           | both, with the tree winning any overlap   | accessibility tree                | the tree walk **plus** the capture and OCR |
+
+**Reach for `axtree` unless something is missing.** It is the cheapest and the only one that reads a real role and title for every element, which is what `--filter-role` and hint search work from.
+
+**Reach for `vision` when a tree is useless**, and as the diagnostic value. On Linux and Windows it returns recognized text and nothing else, by construction rather than by accident, which is exactly what you want when answering "does the screen reader see this button at all". On macOS it keeps the menubar and dock from the tree.
+
+**Reach for `hybrid` when a tree is partly usable** - a native window wrapping a canvas, an Electron app with half its controls exposed. It keeps every tree element, adds the recognized text the tree missed, and drops a recognized region when a tree element contains it, overlaps it by more than half, or when the region spans two or more tree elements (a tab strip read as one wide line). The tree wins every overlap because it carries a role and a title and the recognized alternative does not.
+
+Two things to know before setting it globally. Hybrid pays the sum of both halves rather than the larger, sequentially, so activation is slower than either alone. And per-app is usually the better shape: one badly behaved app on `hybrid` via `[[hints.app_configs]]` while everything else stays on the cheap tree walk.
+
+`--split-word` applies to `vision` and `hybrid`, and is refused under `axtree` - there is no recognized text to split.
+
 ### Choosing a label direction
 
 The `label_direction` setting controls how multi-character hint labels are enumerated once the single-character pool is exhausted. With a 4-character alphabet (`asdf`) and 5 hinted elements, the two algorithms produce visibly different label sequences:
@@ -1038,7 +1058,7 @@ You can also mix directions per-app via `[hints.app_configs]` or per-activation 
 | Field                        | Type   | Description                                                                                                                                                                               |
 | ---------------------------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `bundle_id`                  | string | App bundle ID                                                                                                                                                                             |
-| `strategy`                   | string | Override element detection strategy for this app (`"axtree"` or `"vision"`). Empty string = use global `hints.strategy`.                                                                  |
+| `strategy`                   | string | Override element detection strategy for this app (`"axtree"`, `"vision"` or `"hybrid"`). Empty string = use global `hints.strategy`. See [Choosing a strategy](#choosing-a-strategy).      |
 | `label_direction`            | string | Override hint label algorithm for this app (`"normal"` or `"reverse"`). Empty string = use global `hints.label_direction`. See [Choosing a label direction](#choosing-a-label-direction). |
 | `additional_clickable_roles` | array  | Extra roles to treat as clickable, same vocabulary as [`clickable_roles`](#clickable-roles)                                                                                              |
 | `ignore_clickable_check`     | bool   | Skip clickability heuristic for this app                                                                                                                                                  |

@@ -32,8 +32,12 @@ var HintsCmd = BuildModeCommand(ModeConfig{
   tesseract on Linux, Windows.Media.Ocr on Windows. Off macOS it finds text
   only, and both OCR platforms need language data installed.
 
+  Use --strategy hybrid to do both and merge them, keeping every element the
+  accessibility tree found and adding the recognized text it missed. Reach for
+  it when a tree is partly usable; it costs the tree walk plus the recognition.
+
   Use --split-word to split detected text into word-level regions (requires
-  vision strategy).
+  the vision or hybrid strategy).
 
   Use --debug to probe the focused window and print the clickable elements
   that would be hinted (count plus a sample) without showing the overlay.

@@ -192,11 +192,11 @@ func (h *handlerState) activateHintModeInternal(activation modecmd.Activation) {
 		return
 	}
 
-	// A vision refresh gives up the flash-free redraw the refresh path is built
-	// around, because vision reads the screen: the labels it is replacing come
-	// back as elements of their own, and they cover the text they point at, so
-	// those words are not in the frame at all. Every other strategy asks the
-	// accessibility tree, which cannot see the overlay, and keeps its labels.
+	// A refresh that reads the screen gives up the flash-free redraw the refresh
+	// path is built around: the labels it is replacing come back as elements of
+	// their own, and they cover the text they point at, so those words are not in
+	// the frame at all. axtree asks the accessibility tree, which cannot see the
+	// overlay, and keeps its labels.
 	//
 	// clearOverlayFrameForRedraw, not clearOverlayFrame: the mode is live and its
 	// debounce may still fire, so hintsFrameOnScreen may only be cleared where
@@ -209,7 +209,7 @@ func (h *handlerState) activateHintModeInternal(activation modecmd.Activation) {
 	// BitBlt without CAPTUREBLT, which reads no layered windows, and the overlay is
 	// one - the clear costs a redraw there and buys nothing. Where a residual does
 	// turn up, a settle delay belongs here.
-	if isRefresh && strategy == domain.StrategyVision {
+	if isRefresh && domain.StrategyReadsScreen(strategy) {
 		h.clearOverlayFrameForRedraw()
 	}
 
@@ -330,10 +330,11 @@ func (h *handlerState) activateHintModeInternal(activation modecmd.Activation) {
 	h.startIndicatorPolling(domain.ModeHints)
 }
 
-// needsScreenCapturePermission reports whether the vision strategy is blocked
-// on the screen-recording permission.
+// needsScreenCapturePermission reports whether the resolved strategy is blocked
+// on the screen-recording permission, which every strategy that captures the
+// screen is.
 func (h *handlerState) needsScreenCapturePermission(strategy string) bool {
-	if strategy != domain.StrategyVision {
+	if !domain.StrategyReadsScreen(strategy) {
 		return false
 	}
 

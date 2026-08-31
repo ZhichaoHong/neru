@@ -120,10 +120,10 @@ func (s *HintService) GenerateHints(
 		labelDirection = labelDirectionOverride
 	}
 
-	if splitWord && strategy != domain.StrategyVision {
+	if splitWord && !domain.StrategyReadsScreen(strategy) {
 		return nil, derrors.New(
 			derrors.CodeInvalidInput,
-			"--split-word is only supported when resolved strategy is 'vision'",
+			"--split-word is only supported when the resolved strategy is 'vision' or 'hybrid'",
 		)
 	}
 
@@ -132,9 +132,17 @@ func (s *HintService) GenerateHints(
 		genErr   error
 	)
 
+	// Branching on the resolved strategy, which is a config value the user set and
+	// not a platform, so the One Rule is intact. What separates the two screen
+	// strategies is one filter flag: vision leaves the window to OCR, hybrid walks
+	// it as well and then drops the OCR regions the tree answered for.
 	switch strategy {
 	case domain.StrategyVision:
-		elements = s.generateHintsVision(ctx, bundleID, filter, splitWord)
+		elements = s.generateHintsVision(ctx, filter, splitWord, true)
+	case domain.StrategyHybrid:
+		elements = mergeVisionWithTree(
+			s.generateHintsVision(ctx, filter, splitWord, false),
+		)
 	default:
 		elements, genErr = s.generateHintsAX(ctx, filter)
 	}
@@ -297,34 +305,47 @@ func (s *HintService) generateHintsAX(
 	return elements, nil
 }
 
-// generateHintsVision collects window elements via vision detection and
-// supplementary elements (menubar, dock, etc.) via AX. This hybrid approach
-// ensures system UI is always detected while the frontmost window content
-// uses vision-based detection for apps with poor AX trees.
+// generateHintsVision reads the screen for elements and asks the accessibility
+// tree for the rest.
+//
+// visionOwnsWindow is what separates the two strategies that come through here.
+// Under vision it is true: the tree is asked for supplementary surfaces only -
+// the menubar, the dock, notification centre - and the focused window is left
+// entirely to OCR, which is the point of choosing it for an app whose tree is
+// broken. Under hybrid it is false, so the window is walked as well and the
+// caller merges the two sets.
+//
+// Role filtering follows from that. Vision drops filter.Roles for the tree call,
+// because the supplementary surfaces are system chrome a user filtering for
+// buttons still wants; hybrid keeps them, so the tree half behaves exactly as
+// axtree does and the merge compares like with like. Vision elements are role
+// filtered below either way, since the vision port does not take a filter.
 func (s *HintService) generateHintsVision(
 	ctx context.Context,
-	_ string,
 	filter ports.ElementFilter,
 	splitWord bool,
+	visionOwnsWindow bool,
 ) []*element.Element {
-	// Collect supplementary elements (menubar, dock, NC, etc.) via AX.
-	// These are system-level components that vision should not attempt to detect.
 	var allElements []*element.Element
 
-	supplementStart := time.Now()
-	supplementFilter := filter
-	supplementFilter.Roles = nil               // no role filtering for supplementary elements
-	supplementFilter.SkipWindowElements = true // vision handles the window
+	treeFilter := filter
+	if visionOwnsWindow {
+		treeFilter.Roles = nil
+		treeFilter.SkipWindowElements = true
+	}
 
-	supplementElements, err := s.accessibility.ClickableElements(ctx, supplementFilter)
+	supplementStart := time.Now()
+
+	supplementElements, err := s.accessibility.ClickableElements(ctx, treeFilter)
 	if err != nil {
-		s.logger.Debug("Failed to get supplementary elements via AX", zap.Error(err))
+		s.logger.Debug("Failed to get elements via AX", zap.Error(err))
 	} else {
 		allElements = append(allElements, supplementElements...)
 	}
 
-	s.logger.Debug("TIMING: Supplementary elements (AX)",
+	s.logger.Debug("TIMING: Tree elements (AX)",
 		zap.Duration("elapsed", time.Since(supplementStart)),
+		zap.Bool("window_walked", !visionOwnsWindow),
 		zap.Int("count", len(supplementElements)))
 
 	if s.vision == nil {
@@ -376,10 +397,13 @@ func (s *HintService) generateHintsVision(
 
 		// CodeNotSupported here means the machine cannot run this strategy at
 		// all, and the error names what to install or which display server has
-		// no path. That has to reach a person: what a user otherwise sees is an
-		// overlay with nothing on it, because the supplementary elements kept
-		// above are macOS surfaces with no counterpart elsewhere, and a log
-		// line reaches nobody (ADR 0002). Transient failures stay in the log.
+		// no path. That has to reach a person: under vision what a user sees is
+		// an overlay with nothing on it, because the tree elements kept above
+		// are macOS surfaces with no counterpart elsewhere, and a log line
+		// reaches nobody (ADR 0002). Under hybrid the hints still work off the
+		// tree, which is worse to leave silent rather than better - the strategy
+		// has permanently become axtree and nothing says so. Transient failures
+		// stay in the log.
 		if derrors.IsNotSupported(visionErr) {
 			s.notifyVisionUnavailable(ctx, visionErr.Error())
 		}

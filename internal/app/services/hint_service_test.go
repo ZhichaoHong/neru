@@ -177,6 +177,147 @@ func TestHintService_GenerateHintsVisionCombinesSupplementaryAndWindowElements(
 	}
 }
 
+// TestHintService_GenerateHintsHybridWalksTheWindowAndMergesTheTwoSets covers
+// what separates hybrid from vision at the service: the tree is asked for the
+// window as well, with the configured roles left in place, and a recognized
+// region the tree already answered for does not survive into the hints.
+func TestHintService_GenerateHintsHybridWalksTheWindowAndMergesTheTwoSets(
+	t *testing.T,
+) {
+	treeButton := mustNewElement("tree_button", image.Rect(100, 100, 220, 132))
+	recognizedLabel := mustVisionElement("recognized_label", image.Rect(136, 109, 184, 123))
+	recognizedText := mustVisionElement("recognized_text", image.Rect(400, 400, 500, 440))
+
+	mockAcc := &mocks.MockAccessibilityPort{}
+	mockAcc.ClickableElementsFunc = func(
+		_ context.Context,
+		filter ports.ElementFilter,
+	) ([]*element.Element, error) {
+		if filter.SkipWindowElements {
+			t.Error("hybrid must walk the window tree, not leave it to vision")
+		}
+
+		if len(filter.Roles) == 0 {
+			t.Error("hybrid keeps the configured roles on the tree call, as axtree does")
+		}
+
+		return []*element.Element{treeButton}, nil
+	}
+
+	mockSystem := &mocks.MockSystemPort{}
+	mockSystem.FocusedWindowBoundsFunc = func(context.Context) (image.Rectangle, bool, error) {
+		return image.Rect(0, 0, 800, 600), true, nil
+	}
+
+	generator, _ := hint.NewAlphabetGenerator("asdf", hint.LabelDirectionReverse)
+	service := services.NewHintService(
+		mockAcc,
+		&mocks.MockOverlayPort{},
+		mockSystem,
+		generator,
+		config.HintsConfig{
+			ClickableRoles: []string{string(element.SemanticButton)},
+		},
+		logger.Get(),
+		&mockVisionPort{
+			detectedElements: []*element.Element{recognizedLabel, recognizedText},
+		},
+	)
+
+	hints, err := service.GenerateHints(
+		context.Background(),
+		nil,
+		nil,
+		"com.example.app",
+		domain.StrategyHybrid,
+		"",
+		false,
+	)
+	if err != nil {
+		t.Fatalf("GenerateHints() unexpected error: %v", err)
+	}
+
+	got := make(map[element.ID]bool, len(hints))
+	for _, generatedHint := range hints {
+		got[generatedHint.Element().ID()] = true
+	}
+
+	if !got[treeButton.ID()] {
+		t.Error("the tree element is missing; hybrid never drops one")
+	}
+
+	if !got[recognizedText.ID()] {
+		t.Error("the recognized text away from the tree is missing; that is what hybrid adds")
+	}
+
+	if got[recognizedLabel.ID()] {
+		t.Error("the label recognized inside the tree button survived; the tree wins that overlap")
+	}
+}
+
+// TestHintService_GenerateHintsSplitWordNeedsAScreenStrategy pins the gate that
+// hybrid had to widen. --split-word describes recognized text, so it is
+// meaningful under both strategies that read the screen and refused under the one
+// that does not.
+func TestHintService_GenerateHintsSplitWordNeedsAScreenStrategy(t *testing.T) {
+	tests := []struct {
+		strategy string
+		refused  bool
+	}{
+		{domain.StrategyVision, false},
+		{domain.StrategyHybrid, false},
+		{domain.StrategyAXTree, true},
+	}
+
+	for _, test := range tests {
+		t.Run(test.strategy, func(t *testing.T) {
+			mockAcc := &mocks.MockAccessibilityPort{}
+			mockAcc.ClickableElementsFunc = func(
+				context.Context,
+				ports.ElementFilter,
+			) ([]*element.Element, error) {
+				return nil, nil
+			}
+
+			mockSystem := &mocks.MockSystemPort{}
+			mockSystem.FocusedWindowBoundsFunc = func(
+				context.Context,
+			) (image.Rectangle, bool, error) {
+				return image.Rect(0, 0, 200, 200), true, nil
+			}
+
+			generator, _ := hint.NewAlphabetGenerator("asdf", hint.LabelDirectionReverse)
+			service := services.NewHintService(
+				mockAcc,
+				&mocks.MockOverlayPort{},
+				mockSystem,
+				generator,
+				config.HintsConfig{},
+				logger.Get(),
+				&mockVisionPort{},
+			)
+
+			_, err := service.GenerateHints(
+				context.Background(),
+				nil,
+				nil,
+				"com.example.app",
+				test.strategy,
+				"",
+				true,
+			)
+
+			if test.refused && err == nil {
+				t.Errorf("--split-word under %q was accepted, want it refused", test.strategy)
+			}
+
+			if !test.refused && err != nil {
+				t.Errorf("--split-word under %q was refused: %v", test.strategy, err)
+			}
+		})
+	}
+}
+
 func TestHintService_GenerateHintsVisionWithNilPortReturnsSupplementaryElements(
 	t *testing.T,
 ) {
@@ -782,6 +923,22 @@ func mustNewElement(id string, bounds image.Rectangle) *element.Element {
 	}
 
 	return element
+}
+
+// mustVisionElement builds what a vision port returns. The provenance flag is the
+// only thing the hybrid merge tells the two sets apart by.
+func mustVisionElement(id string, bounds image.Rectangle) *element.Element {
+	built, err := element.NewElement(
+		element.ID(id),
+		bounds,
+		nativeButtonRole,
+		element.WithVisionOnly(),
+	)
+	if err != nil {
+		panic(err)
+	}
+
+	return built
 }
 
 type mockVisionPort struct {
