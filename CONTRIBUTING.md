@@ -77,6 +77,11 @@ build links against.
     just build    # verify the build
     ```
 
+    > [!NOTE]
+    > On Windows, run these from Git Bash. Every recipe needs a POSIX shell,
+    > and from PowerShell they all fail before doing any work — see the
+    > [prerequisites](docs/DEVELOPMENT.md#prerequisites).
+
     > [!IMPORTANT]
     > On macOS, `just test` includes integration tests that **drive your real
     > cursor, keyboard, and overlays**, and they need Accessibility permission
