@@ -191,7 +191,6 @@ type winElement struct {
 
 // comCall invokes the method at vtable slot index on the COM object this.
 // It returns the HRESULT (or boolean/handle) in the low bits of the result.
-// comCall invokes the method at index in this object's COM vtable.
 //
 // CGO is disabled on Windows (see the justfile), so UI Automation is driven
 // through raw vtable calls rather than a C wrapper. All COM work for one
@@ -199,6 +198,18 @@ type winElement struct {
 // creation, property reads, release — and every property is copied into a plain
 // Go value before its object is released, so no COM pointer escapes this file
 // or crosses a goroutine.
+//
+// syscall.SyscallN is //go:nosplit and //go:uintptrkeepalive, so converting an
+// out-parameter's address to uintptr is only safe in *its* argument list. Doing
+// it in a caller of this wrapper is not: the append below can grow the stack,
+// the goroutine stack moves, and SyscallN writes the out-parameter into the
+// abandoned frame. The caller then reads a zero - a nil element, a zero RECT, a
+// zero array length - with a successful HRESULT beside it. //go:uintptrescapes
+// forces those pointees onto the heap and keeps them alive across the call,
+// which is why syscall.Proc.Call carries the same directive. go vet does not
+// flag its absence.
+//
+//go:uintptrescapes
 func comCall(this unsafe.Pointer, index int, args ...uintptr) uintptr {
 	vtbl := *(*unsafe.Pointer)(this)
 	method := *(*uintptr)(unsafe.Add(vtbl, uintptr(index)*unsafe.Sizeof(uintptr(0))))

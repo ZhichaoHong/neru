@@ -78,6 +78,17 @@ func hresultError(what string, hresult uintptr) error {
 // winrtCall invokes the method at vtable slot index on the WinRT object this.
 // The object pointer is the implicit first argument; the return value is the
 // HRESULT.
+//
+// syscall.SyscallN is //go:nosplit and //go:uintptrkeepalive, so converting an
+// out-parameter's address to uintptr is only safe in its own argument list.
+// Through this wrapper it is not: the append below can grow the stack, the
+// goroutine stack moves, and SyscallN writes the out-parameter into the
+// abandoned frame, so the caller reads a zero beside a successful HRESULT.
+// //go:uintptrescapes forces those pointees onto the heap and keeps them alive
+// across the call, which is why syscall.Proc.Call carries the same directive.
+// go vet does not flag its absence.
+//
+//go:uintptrescapes
 func winrtCall(this unsafe.Pointer, index int, args ...uintptr) uintptr {
 	vtbl := *(*unsafe.Pointer)(this)
 	method := *(*uintptr)(unsafe.Add(vtbl, uintptr(index)*unsafe.Sizeof(uintptr(0))))

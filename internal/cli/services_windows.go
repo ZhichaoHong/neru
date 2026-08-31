@@ -280,6 +280,19 @@ func readBSTR(value *uint16) string {
 // free calls it sinks have no actionable failure path.
 func discardCall(uintptr, uintptr, error) {}
 
+// comCall invokes the method at vtable slot index on the COM object this,
+// returning the HRESULT.
+//
+// syscall.SyscallN is //go:nosplit and //go:uintptrkeepalive, so converting an
+// out-parameter's address to uintptr is only safe in its own argument list.
+// Through this wrapper it is not: the append below can grow the stack, the
+// goroutine stack moves, and SyscallN writes the out-parameter into the
+// abandoned frame, so the caller reads a zero beside a successful HRESULT.
+// //go:uintptrescapes forces those pointees onto the heap and keeps them alive
+// across the call, which is why syscall.Proc.Call carries the same directive.
+// go vet does not flag its absence.
+//
+//go:uintptrescapes
 func comCall(this unsafe.Pointer, index int, args ...uintptr) uintptr {
 	vtbl := *(*unsafe.Pointer)(this)
 	method := *(*uintptr)(unsafe.Add(vtbl, uintptr(index)*unsafe.Sizeof(uintptr(0))))
