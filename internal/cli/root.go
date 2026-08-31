@@ -151,9 +151,13 @@ func IsRunningFromAppBundle() bool {
 }
 
 func launchProgram(cmd *cobra.Command, cfgPath string) {
+	// Returning rather than exiting: both callers return nil straight after
+	// this, so the process still leaves with status 0, and the already-running
+	// path stops being one no test can survive.
 	if ipc.IsServerRunning() {
 		cmd.Println("Neru is already running")
-		os.Exit(0)
+
+		return
 	}
 
 	// From here on this process is the daemon rather than a CLI client. On
