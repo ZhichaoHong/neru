@@ -475,8 +475,17 @@ func (o *OverlayWindow) ResizeTo(posX, posY, width, height int) error {
 		return fmt.Errorf("%w: %dx%d", errInvalidOverlayBounds, width, height)
 	}
 
+	// An unchanged rect is a no-op, the way ResizeToActiveScreen treats one.
+	// Callers re-assert the geometry on every frame, and the reallocation below
+	// is proportional to the window: monitor_select spans the whole virtual
+	// desktop, so repeating it per keystroke throws away tens of MB a frame.
+	bounds := image.Rect(posX, posY, posX+width, posY+height)
+	if bounds == o.bounds && o.width == width && o.height == height {
+		return nil
+	}
+
 	o.mu.Lock()
-	o.bounds = image.Rect(posX, posY, posX+width, posY+height)
+	o.bounds = bounds
 	o.width = width
 	o.height = height
 	o.dirty = true
