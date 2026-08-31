@@ -192,6 +192,25 @@ func (h *handlerState) activateHintModeInternal(activation modecmd.Activation) {
 		return
 	}
 
+	// A vision refresh gives up the flash-free redraw the refresh path is built
+	// around, because vision reads the screen: the labels it is replacing come
+	// back as elements of their own, and they cover the text they point at, so
+	// those words are not in the frame at all. Every other strategy asks the
+	// accessibility tree, which cannot see the overlay, and keeps its labels.
+	//
+	// clearOverlayFrameForRedraw, not clearOverlayFrame: the mode is live and its
+	// debounce may still fire, so hintsFrameOnScreen may only be cleared where
+	// that update is invalidated in the same locked section, which is the line
+	// immediately before SetHints below.
+	//
+	// The clear is synchronous only as far as the window manager. A compositor
+	// may still be showing the last frame it composed, so whether the capture
+	// below can read a residual is a per-platform question, unmeasured on
+	// Windows. If one turns up, a settle delay belongs here.
+	if isRefresh && strategy == domain.StrategyVision {
+		h.clearOverlayFrameForRedraw()
+	}
+
 	domainHints, domainHintsErr := h.hintService.GenerateHints(
 		ctx,
 		activation.FilterRoles,
