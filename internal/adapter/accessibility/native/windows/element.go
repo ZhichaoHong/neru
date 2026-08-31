@@ -253,31 +253,31 @@ func MoveMouseToPoint(point image.Point, _ bool) {
 	_ = winplatform.MoveMouseTo(point)
 }
 
-// LeftClickAtPoint clicks the mouse.
+// LeftClickAtPoint clicks the mouse, presenting modifiers.
 func LeftClickAtPoint(
 	point image.Point,
 	_ bool,
-	_ action.Modifiers,
+	modifiers action.Modifiers,
 ) error {
-	return winplatform.LeftClickAt(point)
+	return winplatform.LeftClickAt(point, modifiers)
 }
 
-// RightClickAtPoint clicks the mouse.
+// RightClickAtPoint clicks the mouse, presenting modifiers.
 func RightClickAtPoint(
 	point image.Point,
 	_ bool,
-	_ action.Modifiers,
+	modifiers action.Modifiers,
 ) error {
-	return winplatform.RightClickAt(point)
+	return winplatform.RightClickAt(point, modifiers)
 }
 
-// MiddleClickAtPoint clicks the mouse.
+// MiddleClickAtPoint clicks the mouse, presenting modifiers.
 func MiddleClickAtPoint(
 	point image.Point,
 	_ bool,
-	_ action.Modifiers,
+	modifiers action.Modifiers,
 ) error {
-	return winplatform.MiddleClickAt(point)
+	return winplatform.MiddleClickAt(point, modifiers)
 }
 
 // MouseDownAtPoint presses and holds the given mouse button at the point.
@@ -286,7 +286,7 @@ func MouseDownAtPoint(
 	button action.MouseButton,
 	modifiers action.Modifiers,
 ) error {
-	err := winplatform.MouseDown(point, button)
+	err := winplatform.MouseDown(point, button, modifiers)
 	if err != nil {
 		return err
 	}
@@ -300,9 +300,9 @@ func MouseDownAtPoint(
 func MouseUpAtPoint(
 	point image.Point,
 	button action.MouseButton,
-	_ action.Modifiers,
+	modifiers action.Modifiers,
 ) error {
-	err := winplatform.MouseUp(point, button)
+	err := winplatform.MouseUp(point, button, modifiers)
 	if err != nil {
 		return err
 	}

@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"image"
-	"slices"
 	"unsafe"
 
 	"github.com/y3owk1n/neru/internal/domain/action"
@@ -28,7 +27,8 @@ const (
 	mouseeventfWheel      = 0x0800
 	mouseeventfAbsolute   = 0x8000
 
-	keyeventfKeyUp = 0x0002
+	keyeventfExtendedKey = 0x0001
+	keyeventfKeyUp       = 0x0002
 
 	// neruInjectedTag rides in dwExtraInfo on every keyboard event this
 	// process synthesizes, so the low-level keyboard hook can tell Neru's own
@@ -113,16 +113,21 @@ func sendMouseInput(flags uint32, data uint32) error {
 	return sendOneInput(unsafe.Pointer(&event), unsafe.Sizeof(event))
 }
 
-// sendKeyboardInput presses or releases one virtual key.
-func sendKeyboardInput(virtualKey uint16, isUp bool) error {
+// sendKeyboardInput presses or releases one virtual key. extended addresses the
+// keys whose scancode Windows only resolves with KEYEVENTF_EXTENDEDKEY.
+func sendKeyboardInput(virtualKey uint16, isUp bool, extended bool) error {
 	var event keyInput
 
 	event.inputType = inputKeyboard
 	event.ki.wVk = virtualKey
 	event.ki.dwExtraInfo = neruInjectedTag
 
+	if extended {
+		event.ki.dwFlags |= keyeventfExtendedKey
+	}
+
 	if isUp {
-		event.ki.dwFlags = keyeventfKeyUp
+		event.ki.dwFlags |= keyeventfKeyUp
 	}
 
 	return sendOneInput(unsafe.Pointer(&event), unsafe.Sizeof(event))
@@ -133,49 +138,44 @@ func MoveMouseTo(point image.Point) error {
 	return moveCursorTo(point)
 }
 
-// LeftClickAt performs a left click at the given point.
-func LeftClickAt(point image.Point) error {
-	err := moveCursorTo(point)
-	if err != nil {
-		return err
-	}
-
-	err = sendMouseInput(mouseeventfLeftDown, 0)
-	if err != nil {
-		return err
-	}
-
-	return sendMouseInput(mouseeventfLeftUp, 0)
+// LeftClickAt performs a left click at the given point, presenting modifiers.
+func LeftClickAt(point image.Point, modifiers action.Modifiers) error {
+	return clickAt(point, action.ButtonLeft, modifiers)
 }
 
-// RightClickAt performs a right click at the given point.
-func RightClickAt(point image.Point) error {
-	err := moveCursorTo(point)
-	if err != nil {
-		return err
-	}
-
-	err = sendMouseInput(mouseeventfRightDown, 0)
-	if err != nil {
-		return err
-	}
-
-	return sendMouseInput(mouseeventfRightUp, 0)
+// RightClickAt performs a right click at the given point, presenting modifiers.
+func RightClickAt(point image.Point, modifiers action.Modifiers) error {
+	return clickAt(point, action.ButtonRight, modifiers)
 }
 
-// MiddleClickAt performs a middle click at the given point.
-func MiddleClickAt(point image.Point) error {
+// MiddleClickAt performs a middle click at the given point, presenting modifiers.
+func MiddleClickAt(point image.Point, modifiers action.Modifiers) error {
+	return clickAt(point, action.ButtonMiddle, modifiers)
+}
+
+// clickAt moves to the point and presses and releases one button there, with the
+// keyboard made to present exactly modifiers for the length of both events.
+//
+// The hold spans the cursor move as well as the two button events. A move
+// carries no modifier state of its own, but a window under the cursor sees the
+// hover before the click and some read the live modifiers there.
+func clickAt(point image.Point, button action.MouseButton, modifiers action.Modifiers) error {
+	hold := holdModifiers(modifiers)
+	defer hold.release()
+
 	err := moveCursorTo(point)
 	if err != nil {
 		return err
 	}
 
-	err = sendMouseInput(mouseeventfMiddleDown, 0)
+	flags := flagsForButton(button)
+
+	err = sendMouseInput(flags.down, 0)
 	if err != nil {
 		return err
 	}
 
-	return sendMouseInput(mouseeventfMiddleUp, 0)
+	return sendMouseInput(flags.up, 0)
 }
 
 // buttonFlags holds the SendInput flags that press and release one mouse button.
@@ -198,18 +198,38 @@ func flagsForButton(button action.MouseButton) buttonFlags {
 	}
 }
 
-// MouseDown presses the given button at the given point.
-func MouseDown(point image.Point, button action.MouseButton) error {
+// MouseDown presses the given button at the given point, presenting modifiers.
+//
+// The hold this takes outlives the call: it is what the drag in between carries,
+// and the matching MouseUp is what undoes it.
+func MouseDown(point image.Point, button action.MouseButton, modifiers action.Modifiers) error {
+	hold := holdModifiers(modifiers)
+
 	err := moveCursorTo(point)
 	if err != nil {
+		hold.release()
+
 		return err
 	}
 
-	return sendMouseInput(flagsForButton(button).down, 0)
+	err = sendMouseInput(flagsForButton(button).down, 0)
+	if err != nil {
+		hold.release()
+
+		return err
+	}
+
+	hold.keepForRelease(button)
+
+	return nil
 }
 
-// MouseUp releases the given button at the given point.
-func MouseUp(point image.Point, button action.MouseButton) error {
+// MouseUp releases the given button at the given point, undoing the hold its
+// press took — or presenting modifiers itself when there was no such press.
+func MouseUp(point image.Point, button action.MouseButton, modifiers action.Modifiers) error {
+	hold := resumeModifierHold(button, modifiers)
+	defer hold.release()
+
 	err := moveCursorTo(point)
 	if err != nil {
 		return err
@@ -222,91 +242,17 @@ func MouseUp(point image.Point, button action.MouseButton) error {
 // modifiers down for the duration.
 //
 // A SendInput wheel event carries no modifier field — unlike a CGEvent, which
-// takes flags — so the only way to present a held ctrl is to press the real
-// key, wheel, and release it. Releasing only what this call pressed leaves a
-// modifier the user is physically holding untouched.
+// takes flags — so the only way to present a held ctrl is to make the keyboard
+// hold it (modifiers.go), wheel, and put the keyboard back.
 func ScrollWheel(deltaLines int, modifiers action.Modifiers) error {
 	if deltaLines == 0 {
 		return nil
 	}
 
-	pressed, pressErr := pressModifiers(modifiers)
-	if pressErr != nil {
-		return pressErr
-	}
-
-	// Only what this call actually pressed, never the whole requested set.
-	defer releaseModifiers(pressed)
+	hold := holdModifiers(modifiers)
+	defer hold.release()
 
 	return sendMouseInput(mouseeventfWheel, uint32(int32(deltaLines)*wheelDelta))
-}
-
-// modifierKeys lists the virtual-key code (keys.go) for each modifier bit, in
-// the order they are pressed. Release walks it backwards.
-var modifierKeys = []struct {
-	bit action.Modifiers
-	key uint16
-}{
-	{bit: action.ModShift, key: vkShift},
-	{bit: action.ModCtrl, key: vkControl},
-	{bit: action.ModAlt, key: vkMenu},
-	{bit: action.ModCmd, key: vkLWin},
-}
-
-// pressModifiers holds down every key in modifiers that is not already down,
-// and reports the set it actually pressed so the caller releases only that.
-// A key that fails releases what came before it, so a partial set is never
-// left latched.
-//
-// Skipping keys the user is already holding is the point, not an optimization.
-// A binding like "Ctrl+K" = "action scroll_up --modifier ctrl" fires with ctrl
-// physically down, and a key is one bit of OS state rather than a count: press
-// it a second time and our release afterwards tells every application the user
-// let go, while they are still holding it. Everything they type or click until
-// they release and press again would arrive unmodified.
-//
-// SendInput delivers these to Neru's own low-level keyboard hook, which runs
-// its callback inline on the hook thread and from there reaches the mode
-// handler's lock. neruInjectedTag is what stops that: keep it on every
-// synthesized key, or this becomes a call into the handler from whatever
-// goroutine is injecting.
-func pressModifiers(modifiers action.Modifiers) (action.Modifiers, error) {
-	var pressed action.Modifiers
-
-	for _, modifier := range modifierKeys {
-		if !modifiers.Has(modifier.bit) {
-			continue
-		}
-
-		if isVirtualKeyDown(uint32(modifier.key)) {
-			continue
-		}
-
-		err := sendKeyboardInput(modifier.key, false)
-		if err != nil {
-			releaseModifiers(pressed)
-
-			return 0, err
-		}
-
-		pressed |= modifier.bit
-	}
-
-	return pressed, nil
-}
-
-// releaseModifiers lets go of every key in modifiers, in reverse press order.
-// Callers pass what pressModifiers reported pressing, never the requested set,
-// so a key the user is holding is left alone.
-//
-// Errors are dropped: a release that fails has nothing better to try, and
-// reporting it would mask the outcome of the action it wraps.
-func releaseModifiers(modifiers action.Modifiers) {
-	for _, modifier := range slices.Backward(modifierKeys) {
-		if modifiers.Has(modifier.bit) {
-			_ = sendKeyboardInput(modifier.key, true)
-		}
-	}
 }
 
 // CurrentCursorPosition returns the current cursor location.

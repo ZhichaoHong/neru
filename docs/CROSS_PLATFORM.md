@@ -176,9 +176,9 @@ that is what [Known Gaps](#known-gaps) tracks, per
 | **Keymap learns the focused app** | ✅ published by the watcher | ✅ published by the watcher | ✅ published by the watcher | ✅ published by the watcher | ⚠️ asked when the keymap settles ¹ |
 | **Cursor position**           | ✅ `CGEventGetLocation`  | ✅ `XQueryPointer`     | ✅ compositor IPC (Hyprland) / sync-surface trick | ✅ sync-surface trick | ✅ `GetCursorPos` |
 | **Cursor move**               | ✅ `CGEventPost` ([`postMouseMoveLocked`](../internal/adapter/platform/darwin/accessibility_mouse_darwin.m)) | ✅ XTest (`XTestFakeMotionEvent`) | ✅ `zwlr_virtual_pointer` | ✅ libei                | ✅ `SetCursorPos`            |
-| **Mouse buttons / drag**      | ✅ `CGEventPost`         | ✅ XTest ⁸             | ✅ `zwlr_virtual_pointer`    | ✅ libei                | ✅ `SendInput`               |
+| **Mouse buttons / drag**      | ✅ `CGEventPost`         | ✅ XTest ⁸             | ✅ `zwlr_virtual_pointer`    | ✅ libei                | ✅ `SendInput` ¹⁰            |
 | **Scroll injection**          | ✅ both axes             | ✅ both axes ⁸         | ✅ both axes (uinput + virtual pointer) | ✅ libei     | ⚠️ vertical only             |
-| **Modified scroll (`--modifier`)** | ✅ `CGEventSetFlags` on every chunk | ✅ XTest key hold ⁸ | ✅ virtual keyboard, uinput batch skipped | ✅ libei | ✅ `SendInput` key hold |
+| **Modified scroll (`--modifier`)** | ✅ `CGEventSetFlags` on every chunk | ✅ XTest key hold ⁸ | ✅ virtual keyboard, uinput batch skipped | ✅ libei | ✅ `SendInput` key hold ¹⁰ |
 | **Smooth cursor animation**   | ✅ (incl. relative, opt-in) | ✅ incl. relative, opt-in | ✅ incl. relative, opt-in | ✅ incl. relative, opt-in | ❌                        |
 | **Smooth scroll animation**   | ✅                       | ⚠️ whole notches only ⁴ | ✅ continuous virtual-pointer axis ⁴ | ⚠️ libei scroll delta, unverified ⁴ | ❌       |
 | **Element discovery (hints)** | ✅ AXUIElement           | ⚠️ AT-SPI walk         | ⚠️ AT-SPI walk               | ⚠️ AT-SPI walk          | ⚠️ UIA, shallow tree         |
@@ -421,6 +421,30 @@ tooltip property at all (an item carries `label`, `enabled`, `visible`,
 empty body by protocol rather than unfinished work, as is its Win32
 popup-menu twin. The macOS backend has no such method at all. Nothing a user
 can hover therefore differs between the three.
+
+¹⁰ **A `SendInput` mouse event has no modifier field either.** Windows reads the
+live key state when the event is dispatched and stamps it onto every message the
+target window gets, so the problem footnote ⁸ describes for X11 is the same one
+here, with the same shape of consequence: an unmodified `left_click` bound to
+`Shift+L` arrived as a shift+click, which extends a selection rather than
+placing a caret, and a `Ctrl+J` `scroll_down` arrived as ctrl+scroll, which most
+applications read as zoom. Windows reads the keys back with `GetAsyncKeyState`
+and injects through the same `SendInput` queue as the mouse event, which is what
+keeps the release, the click and the press back in order
+([modifiers.go](../internal/adapter/platform/windows/modifiers.go)). The
+planning half is shared with X11
+([modifierstate](../internal/adapter/platform/modifierstate)) rather than
+reimplemented, so both platforms leave a modifier that is both held and asked
+for alone, and both press a suppressed key back unless it reads down again.
+
+Two Windows-specific details. Modifier keys are addressed per side —
+`VK_LSHIFT`/`VK_RSHIFT` rather than `VK_SHIFT` — because a key event addressed
+to the side-agnostic code lands on the left key, and releasing that while the
+user holds the right one suppresses nothing. And the right ctrl, right alt and
+both Windows keys go out with `KEYEVENTF_EXTENDEDKEY`, which is the only thing
+that tells `VK_RCONTROL` from `VK_LCONTROL` once the virtual key has been
+resolved to a scancode. A drag holds its state from the press to the release
+through the same stash X11 uses.
 
 ### Notes on the ⚠️ entries
 
