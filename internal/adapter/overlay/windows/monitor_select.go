@@ -197,7 +197,7 @@ func (m *Manager) ensureMonitorSelectWindowLocked(
 		m.monitorSelectWin = nil
 	}
 
-	win, err := winplatform.NewOverlayWindowAt(
+	win, err := m.newOverlayWindowAt(
 		span.Min.X, span.Min.Y, span.Dx(), span.Dy(),
 	)
 	if err != nil {

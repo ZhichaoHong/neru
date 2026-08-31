@@ -42,6 +42,12 @@ type winOverlay struct {
 	// accepted with is what is on screen, and re-resolving would hand a
 	// void-returning redraw a refusal it has nowhere to report.
 	lastHintOffset badge.HintOffset
+
+	// excludeFromCapture is the screen-share affinity to give the HWND. It lives
+	// here as well as on the platform window because recreateWindow builds a new
+	// platform window rather than reviving the old one, so the platform field
+	// cannot survive that path on its own.
+	excludeFromCapture bool
 }
 
 func newWinOverlay(logger *zap.Logger) *winOverlay {
@@ -258,6 +264,14 @@ func (o *winOverlay) recreateWindow() {
 
 	o.window = window
 
+	if o.excludeFromCapture {
+		affinityErr := window.SetExcludedFromCapture(true)
+		if affinityErr != nil && o.logger != nil {
+			o.logger.Warn("recreated overlay could not be excluded from screen capture",
+				zap.Error(affinityErr))
+		}
+	}
+
 	if o.logger != nil {
 		bounds := window.Bounds()
 		o.logger.Debug(
@@ -267,6 +281,22 @@ func (o *winOverlay) recreateWindow() {
 			zap.Int("height", bounds.Dy()),
 		)
 	}
+}
+
+// SetExcludedFromCapture applies the screen-share affinity to the surface's
+// window and remembers it for the recreation paths.
+func (o *winOverlay) SetExcludedFromCapture(exclude bool) error {
+	if o == nil {
+		return nil
+	}
+
+	o.excludeFromCapture = exclude
+
+	if o.window == nil {
+		return nil
+	}
+
+	return o.window.SetExcludedFromCapture(exclude)
 }
 
 func (o *winOverlay) ensureWindowForDraw() {

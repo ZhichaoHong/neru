@@ -1004,7 +1004,7 @@ green in every cell while an option means nothing, which is exactly how
 
 | Word | Kind | macOS | Linux | Windows | Why |
 | ---- | ---- | --- | --- | --- | --- |
-| `general.hide_overlay_in_screen_share` | option | ✅ | ❌ | ❌ | hiding the overlay from a screen share is an NSWindow sharing level, a Quartz concept with no X11, Wayland or Win32 counterpart |
+| `general.hide_overlay_in_screen_share` | option | ✅ | ❌ | ✅ | hiding the overlay from a screen share needs a per-window capture exclusion, which macOS has in the NSWindow sharing level and Windows in SetWindowDisplayAffinity; X11 and Wayland have no counterpart |
 | `general.kb_layout_to_use` | option | ✅ | ❌ | ❌ | the keyboard layout is detected rather than chosen outside macOS |
 | `general.passthrough_unbounded_keys` | option | ✅ | ✅ | ❌ | unbound modifier chords reach the focused application on macOS and on the Wayland evdev tap; X11 cannot pass them through at all and Windows does not |
 | `general.passthrough_unbounded_keys_blacklist` | option | ✅ | ✅ | ❌ | unbound modifier chords reach the focused application on macOS and on the Wayland evdev tap; X11 cannot pass them through at all and Windows does not |
@@ -1091,7 +1091,6 @@ whatever the [Capability Matrix](#capability-matrix) currently reports
 | Feature                                   | Platform | Location                                                | Why it is exclusive                                          |
 | ----------------------------------------- | -------- | ------------------------------------------------------- | ------------------------------------------------------------ |
 | System cursor hide + virtual-pointer replacement | macOS | `app/modes/cursor_darwin.go`, `adapter/overlay/render/virtualpointer/overlay_darwin.go` | A Wayland client may not hide another client's cursor. X11 could (`xfixes` is already linked in `platform/linux/cgo.go`), but the blessed stack is Wayland, so shipping it on one backend would not be parity |
-| Screen-sharing hide                       | macOS    | `platform/darwin/overlay_darwin.m`                      | NSWindow sharing level is a Quartz concept                    |
 | Secure input detection                    | macOS    | `platform/darwin/secureinput.go`                        | `CGSessionCopyCurrentDictionary`, a private API; neither X11 nor Wayland has the concept |
 
 Two entries left this table in ADR 0013 and neither is coming back.
@@ -1110,6 +1109,16 @@ engine linked the way every other native dependency here is, with its language
 data resolved at use. Its rectangle-detection half has no OCR answer, so
 `detect_rectangles` and the four `rectangle_*` options stay macOS-only and are
 declared as such.
+
+A third entry has since left. **Screen-sharing hide** was recorded as an NSWindow
+sharing level, a Quartz concept; the mechanism is, but the capability is a
+per-window capture exclusion, and Win32 has one -
+`SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE)`, applied to every
+overlay window at creation. X11 and Wayland still have no counterpart, so
+`hide_overlay_in_screen_share` is declared on macOS and Windows and inert on
+Linux. Windows needs build 19041 (Windows 10 2004) for the affinity; below it the
+call fails and Neru logs the refusal rather than substituting `WDA_MONITOR`, which
+blanks the window in a capture instead of omitting it.
 
 Linux and Windows have no exclusive *user-facing* features — their unique
 elements (evdev, `zwlr_virtual_pointer`, libei, the Wayland sync-cursor surface,

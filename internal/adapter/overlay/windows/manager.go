@@ -56,6 +56,12 @@ type Manager struct {
 	monitorSelectWin *winplatform.OverlayWindow
 	// mouseActionCancel cancels any running mouse action animation.
 	mouseActionCancel context.CancelFunc
+
+	// hideInScreenShare is the affinity every overlay window this manager owns is
+	// created with, so a window created after the toggle inherits it instead of
+	// appearing in a capture until the next toggle. Guarded by renderMu, which is
+	// what guards the window fields it has to be read alongside.
+	hideInScreenShare bool
 }
 
 var (
@@ -475,7 +481,7 @@ func (m *Manager) DrawModeIndicator(cursorX, cursorY int) {
 			m.indicatorWin.Destroy()
 		}
 
-		win, err := winplatform.NewOverlayWindowAt(posX, posY, sizeX, sizeY)
+		win, err := m.newOverlayWindowAt(posX, posY, sizeX, sizeY)
 		if err != nil {
 			if m.logger != nil {
 				m.logger.Error("failed to create indicator overlay window", zap.Error(err))
@@ -586,7 +592,7 @@ func (m *Manager) DrawStickyModifiersIndicator(cursorX, cursorY int, symbols str
 			m.stickyWin.Destroy()
 		}
 
-		win, err := winplatform.NewOverlayWindowAt(posX, posY, sizeX, sizeY)
+		win, err := m.newOverlayWindowAt(posX, posY, sizeX, sizeY)
 		if err != nil {
 			if m.logger != nil {
 				m.logger.Error("failed to create sticky overlay window", zap.Error(err))
@@ -708,7 +714,7 @@ func (m *Manager) DrawMouseActionIndicator(
 			m.mouseWin.Destroy()
 		}
 
-		win, err := winplatform.NewOverlayWindowAt(posX, posY, winSize, winSize)
+		win, err := m.newOverlayWindowAt(posX, posY, winSize, winSize)
 		if err != nil {
 			if m.logger != nil {
 				m.logger.Error("failed to create mouse action overlay window", zap.Error(err))
@@ -843,8 +849,87 @@ func (m *Manager) SetHideUnmatched(hide bool) {
 	}
 }
 
-// SetSharingType is a no-op on Windows.
-func (m *Manager) SetSharingType(_ bool) {}
+// SetSharingType excludes every overlay window from screen captures, or stops
+// excluding them, via SetWindowDisplayAffinity.
+//
+// Windows has no per-window sharing type the way Cocoa does, so "hide" maps to
+// WDA_EXCLUDEFROMCAPTURE and "show" back to WDA_NONE. The affinity is remembered
+// per window, so the recreation paths keep it, and it is remembered here too, so
+// the badge windows created lazily after this call inherit it.
+//
+// It takes renderMu rather than a mutex of its own, unlike darwin: the window
+// fields it reads are the ones renderMu guards, and Destroy clears them, so a
+// dedicated mutex would be a data race on the pointers rather than protection
+// for them. Nothing this holds the lock across re-enters the manager - the
+// affinity call is a syscall on the overlay UI goroutine - so the lock stays a
+// leaf.
+func (m *Manager) SetSharingType(hide bool) {
+	m.renderMu.Lock()
+	defer m.renderMu.Unlock()
+
+	m.hideInScreenShare = hide
+
+	// The shared grid surface answers for itself rather than through its platform
+	// window: it rebuilds that window on the draw path, so it has to remember the
+	// affinity across the rebuild. Nil-safe, so an overlay backend that failed to
+	// come up needs no guard here.
+	m.reportAffinity("grid", hide, m.win.SetExcludedFromCapture(hide))
+
+	badgeWindows := map[string]*winplatform.OverlayWindow{
+		"mode-indicator": m.indicatorWin,
+		"sticky":         m.stickyWin,
+		"mouse-action":   m.mouseWin,
+		"monitor-select": m.monitorSelectWin,
+	}
+
+	for name, win := range badgeWindows {
+		if win == nil {
+			continue
+		}
+
+		m.reportAffinity(name, hide, win.SetExcludedFromCapture(hide))
+	}
+
+	if m.logger != nil {
+		m.logger.Info("Overlay screen share visibility toggled",
+			zap.Bool("hidden", hide))
+	}
+}
+
+// reportAffinity logs a refused display affinity. Loud rather than silent:
+// below build 19041 WDA_EXCLUDEFROMCAPTURE does not exist, so a user who asked
+// to be hidden from a screen share is not hidden, and neither SetSharingType nor
+// the port behind it has a return value to carry that.
+func (m *Manager) reportAffinity(window string, hide bool, err error) {
+	if err == nil || m.logger == nil {
+		return
+	}
+
+	m.logger.Warn("overlay could not be excluded from screen capture",
+		zap.String("window", window),
+		zap.Bool("hidden", hide),
+		zap.Error(err))
+}
+
+// newOverlayWindowAt is the only place this package creates an overlay window,
+// so a window cannot come into existence without the manager's current
+// screen-share affinity. Callers must hold renderMu, which is what
+// hideInScreenShare is guarded by.
+//
+// internal/architecture pins that nothing else in this package calls
+// winplatform.NewOverlayWindowAt directly.
+func (m *Manager) newOverlayWindowAt(posX, posY, width, height int) (*winplatform.OverlayWindow, error) {
+	win, err := winplatform.NewOverlayWindowAt(posX, posY, width, height)
+	if err != nil {
+		return nil, err
+	}
+
+	if m.hideInScreenShare {
+		m.reportAffinity("new-window", true, win.SetExcludedFromCapture(true))
+	}
+
+	return win, nil
+}
 
 // Flush pushes any batched overlay draws to the layered window.
 func (m *Manager) Flush() {
@@ -1024,8 +1109,19 @@ func (m *Manager) ensureWinOverlayLocked() {
 	}
 
 	m.win = newWinOverlay(m.logger)
-	if m.win == nil && m.logger != nil {
-		m.logger.Error("Windows overlay window is unavailable; grid overlay cannot render")
+	if m.win == nil {
+		if m.logger != nil {
+			m.logger.Error("Windows overlay window is unavailable; grid overlay cannot render")
+		}
+
+		return
+	}
+
+	// A rebuilt surface starts with no affinity, the same way it starts with no
+	// sublayer keys (syncSublayerKeysLocked), so the screen-share choice has to be
+	// reapplied here or a rebuild silently makes the overlay capturable again.
+	if m.hideInScreenShare {
+		m.reportAffinity("grid", true, m.win.SetExcludedFromCapture(true))
 	}
 }
 

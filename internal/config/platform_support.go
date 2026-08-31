@@ -13,8 +13,9 @@ import (
 // Each note is worded as the sentence a user reads in the load-time warning and
 // in the published table, so it names the gap rather than the code that has it.
 const (
-	noteScreenShareHide = "hiding the overlay from a screen share is an NSWindow sharing level, " +
-		"a Quartz concept with no X11, Wayland or Win32 counterpart"
+	noteScreenShareHide = "hiding the overlay from a screen share needs a per-window capture " +
+		"exclusion, which macOS has in the NSWindow sharing level and Windows in " +
+		"SetWindowDisplayAffinity; X11 and Wayland have no counterpart"
 	noteVisionStrategy = "the vision strategy needs an element-detection engine, which " +
 		"macOS has in the Vision framework and Linux in tesseract; Windows has neither, " +
 		"so it finds nothing there and none of its settings are read; use axtree"
@@ -56,13 +57,13 @@ var strategyOptions = []string{
 	"app_configs.strategy",
 }
 
-// darwinOnly and darwinAndLinux are the narrow columns this schema uses today,
-// named so a reader compares two options by the same words. A darwin+windows
-// column existed for the hints search badge until Linux drew it too; add one
-// back the moment an option needs it rather than reaching for the nearest fit.
+// darwinOnly, darwinAndLinux and darwinAndWindows are the narrow columns this
+// schema uses today, named so a reader compares two options by the same words.
+// Add one the moment an option needs it rather than reaching for the nearest fit.
 var (
-	darwinOnly     = parity.Platforms{parity.Darwin}
-	darwinAndLinux = parity.Platforms{parity.Darwin, parity.Linux}
+	darwinOnly       = parity.Platforms{parity.Darwin}
+	darwinAndLinux   = parity.Platforms{parity.Darwin, parity.Linux}
+	darwinAndWindows = parity.Platforms{parity.Darwin, parity.Windows}
 )
 
 // PlatformSupport declares, for every option in the schema, the platforms on
@@ -91,7 +92,7 @@ var (
 // stays a Known Gaps entry.
 func PlatformSupport() parity.Declaration {
 	return parity.Join(
-		parity.On(parity.KindOption, darwinOnly, noteScreenShareHide,
+		parity.On(parity.KindOption, darwinAndWindows, noteScreenShareHide,
 			"general.hide_overlay_in_screen_share",
 		),
 		parity.On(parity.KindOption, darwinOnly, noteKeyboardLayout,

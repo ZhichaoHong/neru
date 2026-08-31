@@ -75,6 +75,18 @@ const (
 	triangleSamples  = 4
 )
 
+// Display-affinity values for SetWindowDisplayAffinity.
+//
+// wdaExcludeFromCapture needs build 19041 (Windows 10 2004). Below it the call
+// fails, which is why SetExcludedFromCapture reports rather than assumes. The
+// other documented non-default value, WDA_MONITOR, is deliberately absent: it
+// blanks the window in captures instead of omitting it, so substituting it would
+// answer "hide my overlay" with a black rectangle over the shared screen.
+const (
+	wdaNone               = 0x00000000
+	wdaExcludeFromCapture = 0x00000011
+)
+
 var (
 	errInvalidOverlayBounds = errors.New("invalid overlay bounds")
 	errOverlayNil           = errors.New("overlay is nil")
@@ -101,6 +113,8 @@ var (
 	procDefWindowProcW      = user32.NewProc("DefWindowProcW")
 	procIsWindow            = user32.NewProc("IsWindow")
 	procUpdateLayeredWindow = user32.NewProc("UpdateLayeredWindow")
+
+	procSetWindowDisplayAffinity = user32.NewProc("SetWindowDisplayAffinity")
 
 	kernel32 = windows.NewLazySystemDLL("kernel32.dll")
 
@@ -206,6 +220,12 @@ type OverlayWindow struct {
 	visible bool
 	dirty   bool
 
+	// excludeFromCapture is remembered rather than only applied, because the
+	// affinity is a property of the HWND and every path that recreates one
+	// (ensureWindowForDraw, a resize, a monitor change) would otherwise hand back
+	// a capturable window. createHWNDLocked reapplies it.
+	excludeFromCapture bool
+
 	fills   []rectFill
 	tris    []triFill
 	strokes []rectStroke
@@ -305,6 +325,64 @@ func NewOverlayWindowAt(posX, posY, width, height int) (*OverlayWindow, error) {
 	}
 
 	return overlay, nil
+}
+
+// SetExcludedFromCapture excludes the overlay from screen captures, or stops
+// excluding it, and remembers the choice so a later HWND recreation keeps it.
+//
+// Returns an error when the affinity cannot be set, which is the honest answer
+// below build 19041 (Windows 10 2004) where WDA_EXCLUDEFROMCAPTURE does not
+// exist. Callers get a refusal rather than a window they believe is hidden.
+//
+// It runs on the overlay UI goroutine, like every other HWND operation here, so
+// it cannot interleave with a createHWNDLocked that is replacing the handle.
+func (o *OverlayWindow) SetExcludedFromCapture(exclude bool) error {
+	if o == nil {
+		return errOverlayNil
+	}
+
+	var applyErr error
+
+	runOnOverlayUI(func() {
+		o.excludeFromCapture = exclude
+
+		if o.hwnd == 0 {
+			return
+		}
+
+		applyErr = applyDisplayAffinity(o.hwnd, exclude)
+	})
+
+	return applyErr
+}
+
+// ExcludedFromCapture reports the affinity the overlay last asked for.
+func (o *OverlayWindow) ExcludedFromCapture() bool {
+	if o == nil {
+		return false
+	}
+
+	var exclude bool
+
+	runOnOverlayUI(func() {
+		exclude = o.excludeFromCapture
+	})
+
+	return exclude
+}
+
+func applyDisplayAffinity(hwnd windows.HWND, exclude bool) error {
+	affinity := uintptr(wdaNone)
+	if exclude {
+		affinity = uintptr(wdaExcludeFromCapture)
+	}
+
+	ret, _, err := procSetWindowDisplayAffinity.Call(uintptr(hwnd), affinity)
+	if ret == 0 {
+		return fmt.Errorf("SetWindowDisplayAffinity(%#x): %w", affinity, err)
+	}
+
+	return nil
 }
 
 // HWND returns the native window handle.
@@ -832,6 +910,12 @@ func (o *OverlayWindow) createHWNDLocked() error {
 		swpNoActivate|swpNomove|swpNosize,
 	))
 	discardCall(procShowWindow.Call(hwnd, swHide))
+
+	if o.excludeFromCapture {
+		// Reapply after a recreation. Only SetExcludedFromCapture sets the flag,
+		// and it already reported any failure, so there is nothing new to carry.
+		_ = applyDisplayAffinity(o.hwnd, true)
+	}
 
 	o.visible = false
 

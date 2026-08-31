@@ -35,9 +35,9 @@ func TestPlatformSupport_DeclaresTheKnownNarrowColumns(t *testing.T) {
 		want  parity.Platforms
 	}{
 		{
-			"hiding the overlay from a screen share is a Quartz concept",
+			"hiding the overlay from a screen share needs a per-window capture exclusion",
 			screenShareHide, "",
-			parity.Platforms{parity.Darwin},
+			parity.Platforms{parity.Darwin, parity.Windows},
 		},
 		{
 			"smooth scroll animates on macOS and Linux, not Windows",
