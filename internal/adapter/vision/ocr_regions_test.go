@@ -249,3 +249,59 @@ func TestElementsFromRegions_GivesTheSameBoxTheSameID(t *testing.T) {
 		t.Errorf("IDs %q and %q differ for the same box", first[0].ID(), second[0].ID())
 	}
 }
+
+// TestRegionsFromWords_DropsSubPixelJunk covers what replaces a confidence
+// threshold on an engine that reports no confidence.
+//
+// The measurements are from Windows.Media.Ocr on real UI: a window border comes
+// back as a 5x1 hyphen and a separator as a 2x18 capital I, alongside a 9px-tall
+// dialog label that has to survive. The floor sits between them.
+func TestRegionsFromWords_DropsSubPixelJunk(t *testing.T) {
+	words := []recognizedWord{
+		{Text: "-", Bounds: image.Rect(0, 40, 5, 41)},
+		{Text: "I", Bounds: image.Rect(10, 0, 12, 18)},
+		{Text: labelSave, Bounds: image.Rect(20, 20, 60, 29)},
+	}
+
+	regions := regionsFromWords(
+		words,
+		image.Rect(0, 0, 200, 100),
+		image.Rect(0, 0, 200, 100),
+		0,
+	)
+
+	if len(regions) != 1 {
+		t.Fatalf("got %d regions, want 1", len(regions))
+	}
+
+	if regions[0].Label != labelSave {
+		t.Errorf("kept %q, want the 9px-tall label %q", regions[0].Label, labelSave)
+	}
+}
+
+// TestRegionsFromWords_JunkFloorIsInScreenSpace pins the floor to the space it
+// is measured in. A 2x output reports a 4px-tall word as 8px in the frame, and
+// scaling it back down must not push legitimate text under the floor.
+func TestRegionsFromWords_JunkFloorIsInScreenSpace(t *testing.T) {
+	words := []recognizedWord{
+		{Text: labelSave, Bounds: image.Rect(0, 0, 40, 8)},
+	}
+
+	regions := regionsFromWords(
+		words,
+		image.Rect(0, 0, 100, 100),
+		image.Rect(0, 0, 200, 200),
+		0,
+	)
+
+	if len(regions) != 1 {
+		t.Fatalf(
+			"got %d regions, want 1: an 8px word on a 2x output is 4px on screen",
+			len(regions),
+		)
+	}
+
+	if got := regions[0].Bounds.Dy(); got != 4 {
+		t.Errorf("height %d, want 4", got)
+	}
+}

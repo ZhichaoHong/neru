@@ -321,9 +321,11 @@ func unitFloatBounds() []unitFloatBound {
 			inclusiveZero: false,
 		},
 		{
+			// Zero is legal: it disables the button confidence gate, which an
+			// OCR engine reporting no per-word confidence requires.
 			name:          "hints.vision.button_min_confidence",
 			set:           func(c *config.Config, v float64) { c.Hints.Vision.ButtonMinConfidence = v },
-			inclusiveZero: false,
+			inclusiveZero: true,
 		},
 		{
 			name: "hints.vision.generic_clickable_min_confidence",
