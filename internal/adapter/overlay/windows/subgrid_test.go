@@ -90,6 +90,8 @@ func (w *recordingWindow) DrawPointerGlyph(_ image.Point, _ int, char string, _ 
 
 func (w *recordingWindow) Flush() error { return nil }
 
+func (w *recordingWindow) SetExcludedFromCapture(_ bool) error { return nil }
+
 // forget drops everything painted so far, so what a test asserts on is what
 // the call under test painted.
 func (w *recordingWindow) forget() {
