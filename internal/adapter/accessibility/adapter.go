@@ -4,6 +4,7 @@ import (
 	"context"
 	"image"
 	"runtime"
+	"slices"
 	"sync"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/y3owk1n/neru/internal/adapter/accessibility/native"
 	"github.com/y3owk1n/neru/internal/derrors"
 	"github.com/y3owk1n/neru/internal/domain/action"
+	"github.com/y3owk1n/neru/internal/domain/appidentity"
 	"github.com/y3owk1n/neru/internal/domain/element"
 	"github.com/y3owk1n/neru/internal/ports"
 )
@@ -56,7 +58,7 @@ var elementSlicePool = sync.Pool{
 type Adapter struct {
 	logger               *zap.Logger
 	client               ax.Client
-	excludedBundles      map[string]bool
+	excludedBundles      []string
 	clickableRoles       []string
 	detectMissionControl bool
 }
@@ -69,15 +71,10 @@ func NewAdapter(
 	client ax.Client,
 	detectMissionControl bool,
 ) *Adapter {
-	excludedMap := make(map[string]bool, len(excludedBundles))
-	for _, bundle := range excludedBundles {
-		excludedMap[bundle] = true
-	}
-
 	return &Adapter{
 		logger:               logger,
 		client:               client,
-		excludedBundles:      excludedMap,
+		excludedBundles:      slices.Clone(excludedBundles),
 		clickableRoles:       clickableRoles,
 		detectMissionControl: detectMissionControl,
 	}
@@ -271,8 +268,10 @@ func (a *Adapter) FocusedAppBundleID(ctx context.Context) (string, error) {
 }
 
 // IsAppExcluded checks if the given bundle ID is in the exclusion list.
+// Matching follows [appidentity.Matches], so it agrees with the `bundle_id`
+// lookups in internal/config rather than being stricter than them.
 func (a *Adapter) IsAppExcluded(_ context.Context, bundleID string) bool {
-	return a.excludedBundles[bundleID]
+	return appidentity.MatchesAny(a.excludedBundles, bundleID)
 }
 
 // ReleaseHeldButtons releases any mouse button this process still holds down.
@@ -325,10 +324,7 @@ func (a *Adapter) UpdateClickableRoles(roles []string) {
 func (a *Adapter) UpdateExcludedBundles(bundles []string) {
 	a.logger.Debug("Updating excluded bundles", zap.Int("count", len(bundles)))
 
-	a.excludedBundles = make(map[string]bool, len(bundles))
-	for _, bundle := range bundles {
-		a.excludedBundles[bundle] = true
-	}
+	a.excludedBundles = slices.Clone(bundles)
 }
 
 // checkContext checks if the context is canceled and returns an error if so.

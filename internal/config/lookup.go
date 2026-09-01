@@ -2,7 +2,8 @@ package config
 
 import (
 	"math/bits"
-	"strings"
+
+	"github.com/y3owk1n/neru/internal/domain/appidentity"
 )
 
 // HotkeysForModeAndApp returns the effective per-mode hotkeys map for the given mode
@@ -87,9 +88,8 @@ func (c *Config) GlobalHotkeysForApp(bundleID string) map[string][]string {
 		return base
 	}
 
-	lowerBundleID := strings.ToLower(strings.TrimSpace(bundleID))
 	for idx := range c.AppConfigs {
-		if strings.ToLower(strings.TrimSpace(c.AppConfigs[idx].BundleID)) == lowerBundleID {
+		if appidentity.Matches(c.AppConfigs[idx].BundleID, bundleID) {
 			appConfig := &c.AppConfigs[idx]
 			if len(appConfig.Hotkeys) == 0 {
 				return base
@@ -185,12 +185,10 @@ func (c *ScrollConfig) HasAppHotkeyOverrides() bool {
 }
 
 // AppConfigForBundleID returns the matching hints app config for the given bundle ID.
-// Bundle ID matching is case-insensitive (after trimming whitespace).
+// Matching follows [appidentity.Matches].
 func (c *HintsConfig) AppConfigForBundleID(bundleID string) *AppConfig {
-	lowerBundleID := strings.ToLower(strings.TrimSpace(bundleID))
-
 	for idx := range c.AppConfigs {
-		if strings.ToLower(strings.TrimSpace(c.AppConfigs[idx].BundleID)) == lowerBundleID {
+		if appidentity.Matches(c.AppConfigs[idx].BundleID, bundleID) {
 			return &c.AppConfigs[idx]
 		}
 	}
@@ -199,12 +197,10 @@ func (c *HintsConfig) AppConfigForBundleID(bundleID string) *AppConfig {
 }
 
 // AppConfigForBundleID returns the matching grid app config for the given bundle ID.
-// Bundle ID matching is case-insensitive (after trimming whitespace).
+// Matching follows [appidentity.Matches].
 func (c *GridConfig) AppConfigForBundleID(bundleID string) *AppConfig {
-	lowerBundleID := strings.ToLower(strings.TrimSpace(bundleID))
-
 	for idx := range c.AppConfigs {
-		if strings.ToLower(strings.TrimSpace(c.AppConfigs[idx].BundleID)) == lowerBundleID {
+		if appidentity.Matches(c.AppConfigs[idx].BundleID, bundleID) {
 			return &c.AppConfigs[idx]
 		}
 	}
@@ -213,12 +209,10 @@ func (c *GridConfig) AppConfigForBundleID(bundleID string) *AppConfig {
 }
 
 // AppConfigForBundleID returns the matching recursive grid app config for the given bundle ID.
-// Bundle ID matching is case-insensitive (after trimming whitespace).
+// Matching follows [appidentity.Matches].
 func (c *RecursiveGridConfig) AppConfigForBundleID(bundleID string) *AppConfig {
-	lowerBundleID := strings.ToLower(strings.TrimSpace(bundleID))
-
 	for idx := range c.AppConfigs {
-		if strings.ToLower(strings.TrimSpace(c.AppConfigs[idx].BundleID)) == lowerBundleID {
+		if appidentity.Matches(c.AppConfigs[idx].BundleID, bundleID) {
 			return &c.AppConfigs[idx]
 		}
 	}
@@ -227,12 +221,10 @@ func (c *RecursiveGridConfig) AppConfigForBundleID(bundleID string) *AppConfig {
 }
 
 // AppConfigForBundleID returns the matching scroll app config for the given bundle ID.
-// Bundle ID matching is case-insensitive (after trimming whitespace).
+// Matching follows [appidentity.Matches].
 func (c *ScrollConfig) AppConfigForBundleID(bundleID string) *AppConfig {
-	lowerBundleID := strings.ToLower(strings.TrimSpace(bundleID))
-
 	for idx := range c.AppConfigs {
-		if strings.ToLower(strings.TrimSpace(c.AppConfigs[idx].BundleID)) == lowerBundleID {
+		if appidentity.Matches(c.AppConfigs[idx].BundleID, bundleID) {
 			return &c.AppConfigs[idx]
 		}
 	}
