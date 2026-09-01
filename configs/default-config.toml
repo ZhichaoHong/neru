@@ -165,7 +165,12 @@ rectangle_max_candidates = 100               # Maximum number of rectangle candi
 rectangle_min_size = 0.01                    # Minimum size of detected rectangles (0.01 = 1% of screen/window width/height)
 rectangle_min_aspect = 0.3                   # Minimum aspect ratio (width/height) for rectangles
 rectangle_max_aspect = 10.0                  # Maximum aspect ratio (width/height) for rectangles
-button_min_confidence = 0.3                  # Minimum confidence for button classification
+# Minimum confidence for button classification. Left commented out because the
+# default is platform-specific and writing it here defeats that: Windows.Media.Ocr
+# reports no per-word confidence, so every region scores 0, and any value above 0
+# stops Button classification entirely. Windows defaults to 0 for that reason;
+# macOS and Linux default to 0.3. Uncomment only to override both.
+# button_min_confidence = 0.3
 button_min_aspect = 0.8                      # Minimum aspect ratio for button elements
 button_max_aspect = 8.0                      # Maximum aspect ratio for button elements
 button_icon_max_size = 48                    # Maximum width/height for square button/icon elements (px)

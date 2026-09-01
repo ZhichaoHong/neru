@@ -961,9 +961,13 @@ alone and warn once at load if written anywhere else.
 **Windows has no confidence score.** `Windows.Media.Ocr` reports none, on a word
 or a line, so `minimum_confidence` is inert there and warns at load the same way.
 `button_min_confidence` is read, which is the trap: every Windows word scores 0,
-so anything above 0 suppresses Button classification completely and those
-elements come back as generic clickables. That is why the Windows default is `0`
-rather than the `0.3` in the table. Raising it is honored, not clamped.
+so anything above 0 suppresses Button classification completely. Recognized text
+that is neither a button nor a link is classified `StaticText`, which is not a
+clickable role, so it gets no hint - it does not fall back to a generic clickable.
+That is why the Windows default is `0` rather than the `0.3` in the table, and why
+`configs/default-config.toml` leaves the line commented out: copying a file that
+writes `0.3` would raise the gate on a platform that cannot answer it. Raising it
+deliberately is honored, not clamped.
 
 Every other option below is read on all three.
 
@@ -1000,7 +1004,9 @@ rectangle_max_candidates = 100
 rectangle_min_size = 0.01
 rectangle_min_aspect = 0.3
 rectangle_max_aspect = 10.0
-button_min_confidence = 0.3
+# Platform-specific default: 0 on Windows, 0.3 elsewhere. Leave it out unless you
+# mean to override both.
+# button_min_confidence = 0.3
 button_min_aspect = 0.8
 button_max_aspect = 8.0
 button_icon_max_size = 48

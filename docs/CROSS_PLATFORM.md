@@ -479,10 +479,17 @@ reported by `neru doctor` as an option that does nothing there.
 That has one footgun worth knowing, because the option it affects **is**
 supported. `hints.vision.button_min_confidence` is read on Windows, and every
 word arrives scoring 0, so **any value above 0 suppresses Button classification
-entirely** and those elements fall through to the generic clickable role. The
-Windows default is therefore `0` rather than the shared default. It is a default
-and not a clamp: a config that raises it is honored, measured at 82-92% of
-Buttons lost, and left alone.
+entirely**. Those elements do not fall through to the generic clickable role -
+the classifier answers `StaticText` for any recognized text that is neither a
+button nor a link, and the generic branch is unreachable for text. `StaticText` is
+not a clickable role, so the text is found and then gets no hint at all. Measured
+on a Notepad window: 8 hints against 20 with the gate off, with every label under
+roughly five characters wide gone, `File` included.
+
+The Windows default is therefore `0` rather than the shared default. It is a
+default and not a clamp: a config that raises it is honored, measured at 82-92% of
+Buttons lost, and left alone. `configs/default-config.toml` leaves the option
+commented out so copying it does not silently raise the gate.
 
 Recognized text is screen content and is treated the same way it is on Linux:
 never logged, never written to disk.
