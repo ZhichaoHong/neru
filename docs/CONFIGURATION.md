@@ -471,11 +471,21 @@ The `bundle_id` key selects which app an override applies to — for both `[[app
 | macOS | Bundle ID, reverse-DNS (e.g. `com.apple.Safari`) | `osascript -e 'id of app "Safari"'` |
 | Linux · X11 | Window `WM_CLASS` — the *class* field | `xprop WM_CLASS`, then click the window |
 | Linux · Wayland (wlroots: Sway/Hyprland/niri, KWin/KDE, and COSMIC) | Toplevel `app_id` | `swaymsg -t get_tree` (Sway), `hyprctl activewindow` (Hyprland), `niri msg windows` (niri), or your compositor's window inspector |
-| Windows | Full path of the focused window's executable (e.g. `C:\Program Files\Google\Chrome\Application\chrome.exe`) | Task Manager, Details tab, right-click the process, **Open file location**, or `(Get-Process chrome).Path` in PowerShell |
+| Windows | Executable name (e.g. `chrome.exe`) | Task Manager, Details tab, the *Name* column, or `(Get-Process chrome).Path` in PowerShell |
 
-On Linux, put the `WM_CLASS` or `app_id` in the `bundle_id` field. Matching is case-insensitive but exact — no globbing or partial matches.
+On Linux, put the `WM_CLASS` or `app_id` in the `bundle_id` field. On Windows, put the executable name.
 
-On Windows, put the executable path in the `bundle_id` field, and use a TOML literal string (`'C:\...'`) or double every backslash so the path survives parsing. Matching is case-insensitive but otherwise exact, so the same program installed somewhere else (a per-user install under `%LOCALAPPDATA%`, a portable copy) is a different identity and needs its own entry. Packaged apps from the Microsoft Store all present their window through `ApplicationFrameHost.exe`, so they share one identity and cannot be told apart today.
+Matching is case-insensitive but exact - no globbing or partial matches. The one accommodation is for Windows, where the identity the OS reports is the full path to the executable: **if the `bundle_id` you write contains no path separator, it is matched against the executable name alone.** A `bundle_id` that does contain a separator is matched against the whole path.
+
+Write the bare executable name on Windows. A full path is accepted, but it is tied to one install location and will stop matching when the app moves - `Program Files` against `Program Files (x86)`, a per-user install under `AppData\Local` (Chrome, VS Code and Teams all do this), or a Store app under `WindowsApps`, whose path carries a version number that changes on every update.
+
+```toml
+[[hints.app_configs]]
+bundle_id = "chrome.exe"
+strategy = "vision"
+```
+
+A full path needs a TOML literal string (`'C:\...'`) or doubled backslashes to survive parsing. Packaged apps from the Microsoft Store all present their window through `ApplicationFrameHost.exe`, so they share one identity and cannot be told apart today.
 
 > **Heads up:** Linux identity strings vary by toolkit and distribution. GTK, Qt, Electron, and XWayland apps often report a `WM_CLASS`/`app_id` you would not guess (e.g. `Google-chrome`, `code`, `org.kde.konsole`). Always confirm with the commands above rather than assuming a reverse-DNS name.
 
@@ -782,7 +792,7 @@ layout, shortcut passthrough, and the shell used by `exec` hotkeys.
 
 | Option                                 | Type   | Default       | Description                                                                                       |
 | -------------------------------------- | ------ | ------------- | ------------------------------------------------------------------------------------------------- |
-| `excluded_apps`                        | array  | `[]`          | Bundle IDs where Neru won't activate                                                              |
+| `excluded_apps`                        | array  | `[]`          | Apps where Neru won't activate. Same identity format as [`bundle_id`](#app-identity-across-platforms-bundle_id) |
 | `kb_layout_to_use`                     | string | `""`          | Force keyboard layout InputSourceID bundle ID (auto if empty). E.g. `com.apple.keylayout.Colemak` |
 | `hide_overlay_in_screen_share`         | bool   | `false`       | Hide overlay in screen sharing apps                                                               |
 | `passthrough_unbounded_keys`           | bool   | `false`       | Let unbound Cmd/Ctrl/Alt shortcuts pass through                                                   |

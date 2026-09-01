@@ -72,7 +72,7 @@ func TestNewAdapter(t *testing.T) {
 
 func TestAdapter_IsAppExcluded(t *testing.T) {
 	logger := zap.NewNop()
-	excludedBundles := []string{bundleIDAppleFinder, bundleIDAppleDock}
+	excludedBundles := []string{bundleIDAppleFinder, bundleIDAppleDock, "chrome.exe"}
 	mockClient := &accessibility.MockAXClient{}
 
 	adapter := accessibility.NewAdapter(logger, excludedBundles, []string{}, mockClient, false)
@@ -96,6 +96,23 @@ func TestAdapter_IsAppExcluded(t *testing.T) {
 		{
 			name:     "empty bundle ID",
 			bundleID: "",
+			want:     false,
+		},
+		{
+			name:     "excluded bundle differing only in case",
+			bundleID: "COM.APPLE.FINDER",
+			want:     true,
+		},
+		{
+			// Windows reports the full executable path as the identity, so the
+			// exclusion list has to reach it from a bare exe name.
+			name:     "bare exe name excludes a full windows path",
+			bundleID: `C:\Program Files\Google\Chrome\Application\chrome.exe`,
+			want:     true,
+		},
+		{
+			name:     "bare exe name does not exclude a different exe",
+			bundleID: `C:\Windows\System32\notepad.exe`,
 			want:     false,
 		},
 	}

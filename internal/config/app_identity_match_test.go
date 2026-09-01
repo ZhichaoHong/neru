@@ -1,0 +1,82 @@
+package config_test
+
+import (
+	"testing"
+
+	"github.com/y3owk1n/neru/internal/config"
+)
+
+const (
+	chromeExe      = "chrome.exe"
+	chromeIdentity = `C:\Program Files\Google\Chrome\Application\chrome.exe`
+)
+
+// The identity rule has to reach every place a configured `bundle_id` is
+// compared. When one site misses it, a bare executable name selects a per-app
+// override and silently fails to exclude the same app, or drives hints but not
+// grid.
+func TestBareExeNameMatchesAtEveryLookupSite(t *testing.T) {
+	t.Parallel()
+
+	entry := []config.AppConfig{{BundleID: chromeExe, Strategy: "vision"}}
+
+	hints := &config.HintsConfig{AppConfigs: entry}
+	if hints.AppConfigForBundleID(chromeIdentity) == nil {
+		t.Error("HintsConfig.AppConfigForBundleID did not match a bare exe name")
+	}
+
+	grid := &config.GridConfig{AppConfigs: entry}
+	if grid.AppConfigForBundleID(chromeIdentity) == nil {
+		t.Error("GridConfig.AppConfigForBundleID did not match a bare exe name")
+	}
+
+	recursiveGrid := &config.RecursiveGridConfig{AppConfigs: entry}
+	if recursiveGrid.AppConfigForBundleID(chromeIdentity) == nil {
+		t.Error("RecursiveGridConfig.AppConfigForBundleID did not match a bare exe name")
+	}
+
+	scroll := &config.ScrollConfig{AppConfigs: entry}
+	if scroll.AppConfigForBundleID(chromeIdentity) == nil {
+		t.Error("ScrollConfig.AppConfigForBundleID did not match a bare exe name")
+	}
+
+	excluded := &config.Config{
+		General: config.GeneralConfig{ExcludedApps: []string{chromeExe}},
+	}
+	if !excluded.IsAppExcluded(chromeIdentity) {
+		t.Error("Config.IsAppExcluded did not match a bare exe name")
+	}
+
+	if excluded.IsAppExcluded(`C:\Windows\System32\notepad.exe`) {
+		t.Error("Config.IsAppExcluded matched an app that is not excluded")
+	}
+}
+
+// GlobalHotkeysForApp resolves root-level [[app_configs]] with its own inline
+// comparison, so it needs its own guard.
+func TestGlobalHotkeysForAppMatchesBareExeName(t *testing.T) {
+	t.Parallel()
+
+	cfg := &config.Config{
+		Hotkeys: config.HotkeysConfig{
+			Bindings: map[string][]string{"Primary+Shift+Space": {config.ModeNameHints}},
+		},
+		AppConfigs: []config.AppConfig{{
+			BundleID: chromeExe,
+			Hotkeys:  map[string]config.StringOrStringArray{"Primary+Shift+G": {"grid"}},
+		}},
+	}
+
+	merged := cfg.GlobalHotkeysForApp(chromeIdentity)
+	if _, ok := merged["Primary+Shift+G"]; !ok {
+		t.Errorf(
+			"GlobalHotkeysForApp did not merge the override for a bare exe name, got %v",
+			merged,
+		)
+	}
+
+	unmatched := cfg.GlobalHotkeysForApp(`C:\Windows\System32\notepad.exe`)
+	if _, ok := unmatched["Primary+Shift+G"]; ok {
+		t.Error("GlobalHotkeysForApp merged an override for a non-matching app")
+	}
+}

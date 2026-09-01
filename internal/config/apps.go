@@ -4,26 +4,18 @@ import (
 	"math/bits"
 	"strings"
 
+	"github.com/y3owk1n/neru/internal/domain/appidentity"
 	"github.com/y3owk1n/neru/internal/domain/element"
 )
 
 // IsAppExcluded checks if the given bundle ID is in the excluded apps list.
+// Matching follows [appidentity.Matches].
 func (c *Config) IsAppExcluded(bundleID string) bool {
 	if bundleID == "" {
 		return false
 	}
 
-	// Normalize bundle ID for case-insensitive comparison
-	bundleID = strings.ToLower(strings.TrimSpace(bundleID))
-
-	for _, excludedApp := range c.General.ExcludedApps {
-		excludedApp = strings.ToLower(strings.TrimSpace(excludedApp))
-		if excludedApp == bundleID {
-			return true
-		}
-	}
-
-	return false
+	return appidentity.MatchesAny(c.General.ExcludedApps, bundleID)
 }
 
 // MergedForApp returns a copy of the HintsConfig with app-specific overrides
