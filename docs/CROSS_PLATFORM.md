@@ -813,6 +813,22 @@ Where the tree is thin, plain `vision` stays the honest diagnostic: on Linux and
 Windows it returns recognized text and no tree contribution at all, by
 construction.
 
+**One control, two providers.** A tree can hand the same control back twice. New
+Outlook is the case that surfaced it: the host publishes minimize, maximize and
+close, and the WebView2 content that actually paints them publishes the same three
+again, offset by the frame's top border, so the window got six caption hints, two
+badges deep on each button. Nothing downstream can tell the copies apart - both
+carry the right role, the right name and a rectangle over the glyph - so the hint
+service drops an element when a kept one has the same role, the same non-empty
+name, and each rectangle's center inside the other's
+([hint_merge.go](../internal/app/services/hint_merge.go)). Mutual containment
+rather than an overlap threshold, because it states the defect directly: two
+badges would land on top of each other. A wrapper that holds a control and
+something else fails the test, since its own center falls outside the control, and
+the unnamed `Pane` and `Custom` elements that legitimately nest in Win32 trees are
+out of scope by the name requirement. This runs on every platform's tree, before
+the hybrid merge reads it.
+
 **Linux is ⚠️, not a stub.** Hints genuinely work: `ATSPIClient` enables
 assistive-tech mode, finds the active frame, and walks it (`ClickableNodes`)
 emitting native AT-SPI role names. Configured roles are resolved into that same

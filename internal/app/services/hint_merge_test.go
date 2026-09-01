@@ -196,6 +196,140 @@ func TestMergeVisionWithTree(t *testing.T) {
 	}
 }
 
+func namedElement(
+	t *testing.T,
+	id, role, title string,
+	bounds image.Rectangle,
+) *element.Element {
+	t.Helper()
+
+	built, err := element.NewElement(
+		element.ID(id),
+		bounds,
+		element.Role(role),
+		element.WithTitle(title),
+	)
+	if err != nil {
+		t.Fatalf("building element %q: %v", id, err)
+	}
+
+	return built
+}
+
+func TestDropDuplicateTreeElements(t *testing.T) {
+	t.Parallel()
+
+	type spec struct {
+		id     string
+		role   string
+		title  string
+		bounds image.Rectangle
+	}
+
+	tests := []struct {
+		name     string
+		elements []spec
+		want     []string
+	}{
+		{
+			// New Outlook, physical pixels off a 200% monitor. The host publishes
+			// the three caption buttons and the WebView2 content that paints them
+			// publishes them again, 12px lower.
+			name: "a caption button published by two providers is hinted once",
+			elements: []spec{
+				{"host-min", "AXButton", "Minimize", image.Rect(-300, 118, -204, 214)},
+				{"host-max", "AXButton", "Maximize", image.Rect(-204, 118, -108, 214)},
+				{"host-close", "AXButton", "Close", image.Rect(-108, 118, -12, 214)},
+				{"web-min", "AXButton", "Minimize", image.Rect(-300, 106, -204, 202)},
+				{"web-max", "AXButton", "Maximize", image.Rect(-204, 106, -108, 202)},
+				{"web-close", "AXButton", "Close", image.Rect(-108, 106, -12, 202)},
+			},
+			want: []string{"host-min", "host-max", "host-close"},
+		},
+		{
+			// The three caption buttons of any ordinary window: same role, same
+			// kind of name, side by side. Nothing here may be dropped.
+			name: "buttons beside each other all survive",
+			elements: []spec{
+				{"min", "AXButton", "Minimize", image.Rect(0, 0, 48, 32)},
+				{"max", "AXButton", "Maximize", image.Rect(48, 0, 96, 32)},
+				{"close", "AXButton", "Close", image.Rect(96, 0, 144, 32)},
+			},
+			want: []string{"min", "max", "close"},
+		},
+		{
+			// Two toolbar buttons named the same in different places - a "More"
+			// overflow in each of two panes.
+			name: "the same name in two places survives",
+			elements: []spec{
+				{"left", "AXButton", "More", image.Rect(0, 0, 32, 32)},
+				{"right", "AXButton", "More", image.Rect(900, 0, 932, 32)},
+			},
+			want: []string{"left", "right"},
+		},
+		{
+			// A row and the button inside it can carry the same name. The row's
+			// center is outside the button, so the pair is not a duplicate.
+			name: "a wrapper around a control survives",
+			elements: []spec{
+				{"row", "AXButton", "Inbox", image.Rect(0, 0, 400, 40)},
+				{"icon", "AXButton", "Inbox", image.Rect(8, 8, 40, 32)},
+			},
+			want: []string{"row", "icon"},
+		},
+		{
+			// Unnamed elements are where Win32 trees legitimately stack, so the
+			// rule stays out of them even when the bounds coincide exactly.
+			name: "unnamed elements on one spot survive",
+			elements: []spec{
+				{"pane", "AXGroup", "", image.Rect(0, 0, 200, 40)},
+				{"custom", "AXGroup", "", image.Rect(0, 0, 200, 40)},
+			},
+			want: []string{"pane", "custom"},
+		},
+		{
+			// Same place, same name, different roles: an editable combo box whose
+			// text field carries the field's name.
+			name: "a different role on one spot survives",
+			elements: []spec{
+				{"combo", "AXComboBox", "Search", image.Rect(0, 0, 200, 40)},
+				{"field", "AXTextField", "Search", image.Rect(0, 0, 200, 40)},
+			},
+			want: []string{"combo", "field"},
+		},
+		{
+			// Three providers over one control collapse to the first, not to two.
+			name: "a third copy collapses into the same survivor",
+			elements: []spec{
+				{"first", "AXButton", "Close", image.Rect(0, 0, 96, 96)},
+				{"second", "AXButton", "Close", image.Rect(0, 12, 96, 108)},
+				{"third", "AXButton", "Close", image.Rect(4, 6, 100, 102)},
+			},
+			want: []string{"first"},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			elements := make([]*element.Element, 0, len(test.elements))
+			for _, built := range test.elements {
+				elements = append(
+					elements,
+					namedElement(t, built.id, built.role, built.title, built.bounds),
+				)
+			}
+
+			got := idsOf(dropDuplicateTreeElements(elements))
+
+			if !slices.Equal(got, test.want) {
+				t.Errorf("kept %v, want %v", got, test.want)
+			}
+		})
+	}
+}
+
 // TestMergeVisionWithTreeNeverDropsATreeElement is the asymmetry stated as its
 // own test. Whatever OCR reads over a tree element, the tree element survives -
 // it is the one carrying a real role and title, which --filter-role and hint

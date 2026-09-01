@@ -24,6 +24,59 @@ import (
 // option on evidence; the reverse breaks configs.
 const treeWinsCoverage = 0.5
 
+// dropDuplicateTreeElements removes the elements a kept element already stands
+// for: same role, same name, and each one's center inside the other's bounds.
+//
+// One control can reach the tree through two providers. New Outlook is the case
+// this was written for: its host publishes minimize, maximize and close, and the
+// WebView2 content that actually paints them publishes the same three again,
+// offset by the frame's top border. Both sets are real elements with the right
+// name and a rect over the glyph, so nothing downstream can tell them apart - the
+// window just gets six caption hints, two badges deep on each button.
+//
+// The rule is deliberately narrow. Requiring the name to match, and to be
+// non-empty, keeps it away from the unnamed Pane and Custom elements that legibly
+// nest in Win32 trees. Mutual center containment - rather than an overlap
+// threshold - says the thing that matters and needs no tuning: two badges would
+// land on top of each other, so one of them is noise. A wrapper large enough to
+// hold a control and something else fails it, because its own center falls
+// outside the control.
+//
+// First one wins, so hint labels stay in tree order and do not shuffle when the
+// duplicate provider comes and goes.
+func dropDuplicateTreeElements(elements []*element.Element) []*element.Element {
+	kept := make([]*element.Element, 0, len(elements))
+
+	for _, candidate := range elements {
+		if !standsForKept(candidate, kept) {
+			kept = append(kept, candidate)
+		}
+	}
+
+	return kept
+}
+
+func standsForKept(candidate *element.Element, kept []*element.Element) bool {
+	title := candidate.Title()
+	if title == "" {
+		return false
+	}
+
+	bounds := candidate.Bounds()
+
+	for _, known := range kept {
+		if known.Title() != title || known.Role() != candidate.Role() {
+			continue
+		}
+
+		if center(bounds).In(known.Bounds()) && center(known.Bounds()).In(bounds) {
+			return true
+		}
+	}
+
+	return false
+}
+
 // mergeVisionWithTree drops the OCR elements the accessibility tree has already
 // answered for, and returns the tree elements untouched.
 //

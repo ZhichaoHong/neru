@@ -311,7 +311,7 @@ func (s *HintService) generateHintsAX(
 		return nil, derrors.WrapAccessibilityFailed(err, "get clickable elements")
 	}
 
-	return elements, nil
+	return dropDuplicateTreeElements(elements), nil
 }
 
 // generateHintsVision reads the screen for elements and asks the accessibility
@@ -350,6 +350,10 @@ func (s *HintService) generateHintsVision(
 	if err != nil {
 		s.logger.Debug("Failed to get elements via AX", zap.Error(err))
 	} else {
+		// Deduplicated before the merge below reads it, not after: two elements
+		// stacked on one control would otherwise look to treeAnswersFor like an OCR
+		// region spanning two controls, and suppress a region hybrid exists to add.
+		supplementElements = dropDuplicateTreeElements(supplementElements)
 		allElements = append(allElements, supplementElements...)
 	}
 
