@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -140,8 +141,16 @@ func (s *HintService) GenerateHints(
 	case domain.StrategyVision:
 		elements = s.generateHintsVision(ctx, filter, splitWord, true)
 	case domain.StrategyHybrid:
-		elements = mergeVisionWithTree(
-			s.generateHintsVision(ctx, filter, splitWord, false),
+		// The tree half is collected wider than the activation asked for, so the
+		// merge can drop an OCR region a clickable control already answers for even
+		// when the activation excluded that control's role. The activation's own
+		// filter then decides what reaches the overlay, so the extra tree elements
+		// are never hinted.
+		elements = retainMatching(
+			mergeVisionWithTree(
+				s.generateHintsVision(ctx, hybridCollectFilter(filter, cfg, bundleID), splitWord, false),
+			),
+			filter,
 		)
 	default:
 		elements, genErr = s.generateHintsAX(ctx, filter)
@@ -317,8 +326,9 @@ func (s *HintService) generateHintsAX(
 //
 // Role filtering follows from that. Vision drops filter.Roles for the tree call,
 // because the supplementary surfaces are system chrome a user filtering for
-// buttons still wants; hybrid keeps them, so the tree half behaves exactly as
-// axtree does and the merge compares like with like. Vision elements are role
+// buttons still wants. Hybrid keeps them, but its caller hands in a filter already
+// widened by hybridCollectFilter and narrows the merged result itself, so what
+// arrives here is the dedupe set rather than the hint set. Vision elements are
 // filtered below either way, since the vision port does not take a filter.
 func (s *HintService) generateHintsVision(
 	ctx context.Context,
@@ -490,6 +500,92 @@ func (s *HintService) notifyVisionUnavailable(ctx context.Context, reason string
 	}()
 }
 
+// hybridCollectFilter widens the role set the tree half is collected with to the
+// union of the activation's roles and the app's configured clickable roles.
+//
+// The merge needs it. A role filter says which elements the user wants hints on,
+// not which parts of the screen the deduplicator may consult, and collecting the
+// tree at the activation's width breaks that: an OCR region inside an excluded
+// control meets no tree element to be deduped against and survives with whatever
+// role the classifier guessed. Measured on Explorer, `hybrid --role=button`
+// produced 28 vision-only elements against plain `hybrid`'s 4 - a narrowing filter
+// widening the output 7x.
+//
+// Wider is not free, and the cost is bounded. Measured on one Explorer window, the
+// UIA walk took 22 ms keeping 0 elements, 139 ms keeping 37 and ~180 ms keeping 79 -
+// the role condition is pushed into the native walk, so cost tracks the elements
+// kept rather than the nodes visited. A role-filtered activation therefore pays what
+// an unfiltered one pays, which is the ceiling and an activation users already run.
+//
+// Two things it is deliberately not. Not the unfiltered tree - default
+// clickable_roles excludes static text, so a non-clickable StaticText node would
+// then suppress the very OCR region hybrid exists to add. And not the configured
+// set alone, which would take away the tree elements an activation asking for a
+// role the config omits gets today.
+func hybridCollectFilter(
+	filter ports.ElementFilter,
+	cfg config.HintsConfig,
+	bundleID string,
+) ports.ElementFilter {
+	collect := filter
+	collect.Roles = unionRoles(filter.Roles, elementRoles(cfg.ClickableRolesForApp(bundleID)))
+
+	return collect
+}
+
+// unionRoles adds the configured roles the activation did not ask for.
+//
+// Either side being empty returns the activation's set unchanged, and for opposite
+// reasons. An empty activation set already means "no role restriction" to
+// ElementFilter.Matches, so there is nothing to widen. An empty configured set is a
+// config that restricts nothing, and widening a narrow activation to the whole tree
+// on that basis is how a StaticText node ends up suppressing OCR text.
+func unionRoles(requested, configured []element.Role) []element.Role {
+	if len(requested) == 0 || len(configured) == 0 {
+		return requested
+	}
+
+	union := make([]element.Role, 0, len(requested)+len(configured))
+	union = append(union, requested...)
+
+	for _, role := range configured {
+		if !slices.Contains(union, role) {
+			union = append(union, role)
+		}
+	}
+
+	return union
+}
+
+// elementRoles converts resolved native role names, dropping the empty entries a
+// platform resolution can leave behind.
+func elementRoles(roles []string) []element.Role {
+	converted := make([]element.Role, 0, len(roles))
+
+	for _, role := range roles {
+		if role == "" {
+			continue
+		}
+
+		converted = append(converted, element.Role(role))
+	}
+
+	return converted
+}
+
+// retainMatching keeps the elements the filter accepts, in order.
+func retainMatching(elements []*element.Element, filter ports.ElementFilter) []*element.Element {
+	kept := make([]*element.Element, 0, len(elements))
+
+	for _, candidate := range elements {
+		if filter.Matches(candidate) {
+			kept = append(kept, candidate)
+		}
+	}
+
+	return kept
+}
+
 // hintFilter builds the element filter for one activation. The second result
 // is false when every requested role belongs to another platform: hinting
 // everything would hide that misconfiguration, so nothing is hinted instead
@@ -531,14 +627,7 @@ func (s *HintService) hintFilter(
 			zap.Int("role_count", len(roles)))
 	}
 
-	filter.Roles = make([]element.Role, 0, len(roles))
-	for _, role := range roles {
-		if role == "" {
-			continue
-		}
-
-		filter.Roles = append(filter.Roles, element.Role(role))
-	}
+	filter.Roles = elementRoles(roles)
 
 	if len(filter.Roles) == 0 && len(requested) > 0 {
 		s.logger.Warn(

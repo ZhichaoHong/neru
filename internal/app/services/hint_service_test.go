@@ -197,8 +197,11 @@ func TestHintService_GenerateHintsHybridWalksTheWindowAndMergesTheTwoSets(
 			t.Error("hybrid must walk the window tree, not leave it to vision")
 		}
 
-		if len(filter.Roles) == 0 {
-			t.Error("hybrid keeps the configured roles on the tree call, as axtree does")
+		// With no --role the widened dedupe set collapses to the configured one, so
+		// an unfiltered activation walks exactly the tree axtree would.
+		configured := nativeRoles(element.SemanticButton)
+		if !slices.Equal(filter.Roles, configured) {
+			t.Errorf("tree call roles = %v, want the configured set %v", filter.Roles, configured)
 		}
 
 		return []*element.Element{treeButton}, nil
@@ -253,6 +256,130 @@ func TestHintService_GenerateHintsHybridWalksTheWindowAndMergesTheTwoSets(
 	if got[recognizedLabel.ID()] {
 		t.Error("the label recognized inside the tree button survived; the tree wins that overlap")
 	}
+}
+
+// TestHintService_GenerateHintsHybridDedupesAgainstRolesTheActivationExcluded is
+// the rule that a role filter narrows what gets hinted, never what the merge may
+// deduplicate against.
+//
+// The behavior it prevents was measured, not hypothetical: `hybrid --role=button`
+// on an Explorer window produced 28 vision-only elements against plain `hybrid`'s
+// 4, because an OCR region inside a link or a text field met no tree element to be
+// dropped by and the classifier had already guessed a role that passed the filter.
+// A narrowing filter widening the output 7x is not a filter.
+//
+// Every recognized element here carries the requested role while the tree element
+// covering one of them does not, so the merge is the only thing that can drop it.
+func TestHintService_GenerateHintsHybridDedupesAgainstRolesTheActivationExcluded(
+	t *testing.T,
+) {
+	treeButton := mustRoledElement("tree_button", image.Rect(100, 100, 220, 132), nativeButtonRole)
+	treeLink := mustRoledElement("tree_link", image.Rect(300, 100, 380, 130), nativeLinkRole)
+
+	recognizedInButton := mustRoledElement(
+		"recognized_in_button",
+		image.Rect(136, 109, 184, 123),
+		nativeLinkRole,
+		element.WithVisionOnly(),
+	)
+	recognizedAlone := mustRoledElement(
+		"recognized_alone",
+		image.Rect(400, 400, 500, 440),
+		nativeLinkRole,
+		element.WithVisionOnly(),
+	)
+
+	mockAcc := &mocks.MockAccessibilityPort{}
+	mockAcc.ClickableElementsFunc = func(
+		_ context.Context,
+		filter ports.ElementFilter,
+	) ([]*element.Element, error) {
+		for _, want := range []element.Role{nativeLinkRole, nativeButtonRole} {
+			if !slices.Contains(filter.Roles, want) {
+				t.Errorf("tree call roles %v miss %q; the dedupe set is the union of "+
+					"the activation's roles and the configured ones", filter.Roles, want)
+			}
+		}
+
+		// The real adapter applies the filter during the walk, so a mock that
+		// returned everything would hide whether the widening reached it.
+		return retainMatchingElements(filter, treeButton, treeLink), nil
+	}
+
+	mockSystem := &mocks.MockSystemPort{}
+	mockSystem.FocusedWindowBoundsFunc = func(context.Context) (image.Rectangle, bool, error) {
+		return image.Rect(0, 0, 800, 600), true, nil
+	}
+
+	generator, _ := hint.NewAlphabetGenerator("asdf", hint.LabelDirectionReverse)
+	service := services.NewHintService(
+		mockAcc,
+		&mocks.MockOverlayPort{},
+		mockSystem,
+		generator,
+		config.HintsConfig{
+			ClickableRoles: []string{
+				string(element.SemanticButton),
+				string(element.SemanticLink),
+			},
+		},
+		logger.Get(),
+		&mockVisionPort{
+			detectedElements: []*element.Element{recognizedInButton, recognizedAlone},
+		},
+	)
+
+	hints, err := service.GenerateHints(
+		context.Background(),
+		[]string{string(element.SemanticLink)},
+		nil,
+		"com.example.app",
+		domain.StrategyHybrid,
+		"",
+		false,
+	)
+	if err != nil {
+		t.Fatalf("GenerateHints() unexpected error: %v", err)
+	}
+
+	got := make(map[element.ID]bool, len(hints))
+	for _, generatedHint := range hints {
+		got[generatedHint.Element().ID()] = true
+	}
+
+	if got[recognizedInButton.ID()] {
+		t.Error("a recognized region inside a button survived --role=link; " +
+			"the merge must dedupe against roles the activation excluded")
+	}
+
+	if !got[recognizedAlone.ID()] {
+		t.Error("the recognized region no tree element covers is missing; that is what hybrid adds")
+	}
+
+	if got[treeButton.ID()] {
+		t.Error("the excluded tree button was hinted; widening the walk must not widen the hints")
+	}
+
+	if !got[treeLink.ID()] {
+		t.Error("the requested tree link is missing")
+	}
+}
+
+// retainMatchingElements stands in for the role filtering the accessibility
+// adapter performs during its own walk.
+func retainMatchingElements(
+	filter ports.ElementFilter,
+	elements ...*element.Element,
+) []*element.Element {
+	kept := make([]*element.Element, 0, len(elements))
+
+	for _, candidate := range elements {
+		if filter.Matches(candidate) {
+			kept = append(kept, candidate)
+		}
+	}
+
+	return kept
 }
 
 // TestHintService_GenerateHintsSplitWordNeedsAScreenStrategy pins the gate that
@@ -901,28 +1028,61 @@ func TestHintService_HealthReportsTheVisionPort(t *testing.T) {
 	}
 }
 
-// nativeButtonRole is the accessibility role a button reports on the platform
-// running the tests. Configured roles resolve to native names, so an element
-// built with a role from another platform would silently stop matching a
-// config that asks for "button".
-var nativeButtonRole = func() element.Role {
-	native := element.ResolveRolesForCurrentPlatform(
-		[]string{string(element.SemanticButton)},
-	).Native
+// nativeButtonRole and nativeLinkRole are the accessibility roles a button and a
+// link report on the platform running the tests. Configured roles resolve to
+// native names, so an element built with a role from another platform would
+// silently stop matching a config that asks for "button".
+var (
+	nativeButtonRole = nativeRole(element.SemanticButton, element.RoleButton)
+	nativeLinkRole   = nativeRole(element.SemanticLink, element.RoleLink)
+)
+
+func nativeRole(semantic element.SemanticRole, fallback element.Role) element.Role {
+	native := nativeRoles(semantic)
 	if len(native) == 0 {
-		return element.RoleButton
+		return fallback
 	}
 
-	return element.Role(native[0])
-}()
+	return native[0]
+}
+
+// nativeRoles is every native role a semantic name resolves to here. One semantic
+// name can cover several - "button" is Button and SplitButton on Windows - so a
+// test asserting on a role set has to resolve rather than assume.
+func nativeRoles(semantic ...element.SemanticRole) []element.Role {
+	requested := make([]string, 0, len(semantic))
+	for _, name := range semantic {
+		requested = append(requested, string(name))
+	}
+
+	native := element.ResolveRolesForCurrentPlatform(requested).Native
+
+	roles := make([]element.Role, 0, len(native))
+	for _, name := range native {
+		roles = append(roles, element.Role(name))
+	}
+
+	return roles
+}
 
 func mustNewElement(id string, bounds image.Rectangle) *element.Element {
-	element, elementErr := element.NewElement(element.ID(id), bounds, nativeButtonRole)
-	if elementErr != nil {
-		panic(elementErr)
+	return mustRoledElement(id, bounds, nativeButtonRole)
+}
+
+// mustRoledElement builds an element whose role the test chose, for the cases
+// where the role is what is under test rather than incidental.
+func mustRoledElement(
+	id string,
+	bounds image.Rectangle,
+	role element.Role,
+	opts ...element.Option,
+) *element.Element {
+	built, err := element.NewElement(element.ID(id), bounds, role, opts...)
+	if err != nil {
+		panic(err)
 	}
 
-	return element
+	return built
 }
 
 // mustVisionElement builds what a vision port returns. The provenance flag is the

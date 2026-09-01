@@ -48,11 +48,12 @@ const treeWinsCoverage = 0.5
 //     paragraph of text for one stray tree element inside it - which is exactly
 //     the text hybrid exists to add.
 //
-// The tree set here is already role-filtered, because the filter is applied inside
-// the accessibility adapter. So an OCR word sitting inside a tree element the role
-// filter excluded survives. That reading is defensible - the user asked for
-// buttons, and OCR's guess at button-ness is what is left - but nobody chose it
-// deliberately.
+// The tree set here is role-filtered, because the filter is applied inside the
+// accessibility adapter - but at the width hybridCollectFilter chose, which is the
+// activation's roles plus the app's clickable ones. So an OCR word sitting inside a
+// clickable control the activation excluded is dropped here rather than surviving
+// with whatever role the classifier guessed, and the caller applies the
+// activation's own filter to what this returns.
 func mergeVisionWithTree(elements []*element.Element) []*element.Element {
 	var tree, vision []*element.Element
 
