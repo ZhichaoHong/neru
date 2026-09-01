@@ -25,8 +25,27 @@ type EventTap struct {
 	hotkeys              []string
 	stickyModifierToggle bool
 	enabled              bool
+	dispatcher           *keyDispatcher
 
 	hook *winplatform.KeyboardHook
+}
+
+// keyQueueSize bounds the keys waiting for the dispatcher goroutine. Human
+// typing never comes close; filling it means a mode action has wedged.
+const keyQueueSize = 256
+
+// keyDispatcher carries keys from the hook thread to a goroutine that runs the
+// mode action. A WH_KEYBOARD_LL procedure has to return within
+// LowLevelHooksTimeout (HKCU\Control Panel\Desktop, 300 ms when absent) or
+// Windows drops the hook out of the chain for that event and delivers the key to
+// the foreground application whatever the procedure returns. A mode action is
+// nowhere near that fast: the drag walk in MouseUp sleeps between steps, and
+// "hints --repeat" re-walks the UIA tree to recompute labels. Running either on
+// the hook thread leaks the key into the app, which in Notepad types over the
+// selection the drag just made.
+type keyDispatcher struct {
+	keys chan string
+	stop chan struct{}
 }
 
 // NewEventTap creates a new event tap.
@@ -53,9 +72,13 @@ func (et *EventTap) Enable() {
 	et.enabled = true
 	et.mu.Unlock()
 
+	// Before the hook, so the first event already has somewhere to queue.
+	et.startDispatch()
+
 	hook, err := winplatform.StartKeyboardHook(et.handleKey)
 	if err != nil {
 		et.logger.Error("failed to start keyboard hook", zap.Error(err))
+		et.stopDispatch()
 		et.mu.Lock()
 		et.enabled = false
 		et.mu.Unlock()
@@ -85,6 +108,11 @@ func (et *EventTap) Disable() {
 	if hook != nil {
 		hook.Stop()
 	}
+
+	// After the hook, so a key read during teardown still reaches the handler.
+	// Never joined: the caller can be holding the mode handler's lock, which the
+	// in-flight action may be waiting on.
+	et.stopDispatch()
 }
 
 // Destroy destroys the event tap.
@@ -252,12 +280,71 @@ func (et *EventTap) handleKey(key string, isUp bool) bool {
 	return true
 }
 
+// dispatchKey hands the key to the dispatcher goroutine and returns, so
+// handleKey can answer the hook immediately. Ordering is kept because one
+// goroutine drains one channel.
 func (et *EventTap) dispatchKey(key string) {
+	if key == "" {
+		return
+	}
+
+	et.mu.RLock()
+	dispatcher := et.dispatcher
+	et.mu.RUnlock()
+
+	if dispatcher == nil {
+		et.deliverKey(key)
+
+		return
+	}
+
+	select {
+	case dispatcher.keys <- key:
+	case <-dispatcher.stop:
+	}
+}
+
+func (et *EventTap) startDispatch() {
+	dispatcher := &keyDispatcher{
+		keys: make(chan string, keyQueueSize),
+		stop: make(chan struct{}),
+	}
+
+	et.mu.Lock()
+	et.dispatcher = dispatcher
+	et.mu.Unlock()
+
+	go et.runDispatch(dispatcher)
+}
+
+func (et *EventTap) stopDispatch() {
+	et.mu.Lock()
+	dispatcher := et.dispatcher
+	et.dispatcher = nil
+	et.mu.Unlock()
+
+	if dispatcher != nil {
+		close(dispatcher.stop)
+	}
+}
+
+func (et *EventTap) runDispatch(dispatcher *keyDispatcher) {
+	for {
+		select {
+		case <-dispatcher.stop:
+			return
+		case key := <-dispatcher.keys:
+			et.deliverKey(key)
+		}
+	}
+}
+
+func (et *EventTap) deliverKey(key string) {
 	et.mu.RLock()
 	callback := et.callback
 	et.mu.RUnlock()
 
-	if callback != nil && key != "" {
+	if callback != nil {
 		callback(key)
 	}
 }
