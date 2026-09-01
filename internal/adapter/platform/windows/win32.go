@@ -78,7 +78,17 @@ var (
 	shcore = windows.NewLazySystemDLL("shcore.dll")
 
 	procGetDpiForMonitor = shcore.NewProc("GetDpiForMonitor")
+
+	dwmapi = windows.NewLazySystemDLL("dwmapi.dll")
+
+	procDwmGetWindowAttribute = dwmapi.NewProc("DwmGetWindowAttribute")
 )
+
+// dwmwaExtendedFrameBounds asks DWM for the frame the user sees, without the
+// invisible resize border GetWindowRect includes. The border is DPI-dependent -
+// measured at 9 physical pixels on left, right and bottom at 150% scaling and 11
+// at 200%, none at the top - so nothing may assume a width.
+const dwmwaExtendedFrameBounds = 9
 
 var errNoMonitors = errors.New("EnumDisplayMonitors: no monitors found")
 
@@ -464,29 +474,65 @@ func focusedWindowBounds() (image.Rectangle, bool, error) {
 		return image.Rectangle{}, false, nil
 	}
 
-	var rect windows.Rect
+	bounds, err := windowFrameBounds(hwnd)
+	if err != nil {
+		return image.Rectangle{}, false, err
+	}
+
+	return clipToScreen(bounds)
+}
+
+// windowFrameBounds is the visible extent of a top-level window in physical
+// pixels. Every consumer of the focused window wants the visible frame rather
+// than GetWindowRect's outer rect: a window-scoped OCR capture would otherwise
+// feed the border's pixels of whatever sits behind the window to the recognizer,
+// and centering the cursor on a window would let an offset land it outside the
+// window it names.
+//
+// Both APIs answer in physical pixels only because neru's manifest declares
+// per-monitor DPI awareness V2. A process without that manifest - a `go test`
+// binary, for one - gets GetWindowRect virtualized and DwmGetWindowAttribute not,
+// and the two rects then disagree by the monitor's scale factor.
+func windowFrameBounds(hwnd windows.HWND) (image.Rectangle, error) {
+	var frame windows.Rect
+
+	hresult, _, _ := procDwmGetWindowAttribute.Call(
+		uintptr(hwnd),
+		dwmwaExtendedFrameBounds,
+		uintptr(unsafe.Pointer(&frame)),
+		unsafe.Sizeof(frame),
+	)
+	if hresult == 0 {
+		return rectToImage(frame), nil
+	}
+
+	// Not the minimized path: DWM answers for a minimized window too, with the
+	// same off-screen rect GetWindowRect gives. This is the window dying between
+	// the handle check and here, where the outer rect beats a failure.
+	var outer windows.Rect
 
 	ret, _, err := procGetWindowRect.Call(
 		uintptr(hwnd),
-		uintptr(unsafe.Pointer(&rect)),
+		uintptr(unsafe.Pointer(&outer)),
 	)
 
 	callErr := win32Bool(ret, err)
 	if callErr != nil {
-		return image.Rectangle{}, false, fmt.Errorf("GetWindowRect: %w", callErr)
+		return image.Rectangle{}, fmt.Errorf("GetWindowRect: %w", callErr)
 	}
 
-	return clipToScreen(rectToImage(rect))
+	return rectToImage(outer), nil
 }
 
 // clipToScreen intersects a window rectangle with the virtual screen, the
 // rectangle every monitor fits inside.
 //
-// GetWindowRect reports the frame Windows tracks rather than the frame a user
-// sees: a maximized window overhangs its monitor by the invisible resize border
-// on every side. That overhang holds nothing hintable, and a screen-capture
-// strategy that asked for it would be refused, because a frame that leaves the
-// screen cannot be placed. The clip is to the whole desktop rather than to one
+// A window can report a frame that leaves the desktop: dragged past the outer
+// edge of the outermost monitor, or padded by the invisible resize border when
+// windowFrameBounds falls back to GetWindowRect. That overhang holds nothing
+// hintable, and a screen-capture strategy that asked for it would be refused,
+// because a frame that leaves the screen cannot be placed. The clip is to the
+// whole desktop rather than to one
 // monitor so a window dragged across a seam keeps both halves; BitBlt reads
 // across the seam. It lives here, where every consumer of the focused window
 // sees the same rectangle, rather than in the capture path alone. A window
