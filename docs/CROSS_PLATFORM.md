@@ -663,7 +663,7 @@ meaningful after passing `Cmd+Tab` through.
 | **Client**              | `InfraAXClient` → ObjC bridge               | `atspi.Client` → `org.a11y.atspi`                  | `UIAClient` → raw COM vtables        |
 | **Files**               | `native/darwin/element.go`, `tree.go`       | `accessibility/atspi/`, `native/linux/element.go`, `factory_linux.go` | `native/windows/automation.go`, `element.go`, `tree.go` |
 | **Traversal**           | Full recursive walk of the AXUIElement hierarchy | Recursive walk of the active frame's subtree, depth/node capped | Control-view tree in one cached `FindAll`, any depth |
-| **Sources collected**   | Frontmost + all windows, popovers, menubar, dock, notification center, Stage Manager, PIP | Active frame's subtree only          | Foreground window's control view     |
+| **Sources collected**   | Frontmost + all windows, popovers, menubar, dock, notification center, Stage Manager, PIP | Active frame's subtree only          | Foreground window's control view, plus hit-tested caption buttons |
 | **Filtering**           | Role matching, size/position heuristics, excluded apps, dedup | Native AT-SPI roles, `SHOWING` state, on-screen extents | `IsControlElement` + `IsContentElement`, non-zero bounds |
 | **Strategies**          | `axtree` (default), `vision` and `contour`, incl. per-app overrides | `axtree`, `vision` (text only) and `contour` | `axtree`, `vision` (text only) and `contour` |
 | **Popovers / menus**    | ✅ dedicated detection                      | ⚠️ only if inside the active frame's subtree       | 🟡                                   |
@@ -675,6 +675,18 @@ window's control-view tree in one cached UI Automation query with
 `Windows.Media.Ocr` beside it; the ⚠️ is the control view, since an element a
 provider exposes only in the raw view is not a hint, and the answer is a role
 or filter default, never a per-app branch.
+
+**Caption buttons on Windows come from a second source.** A window with the
+system frame publishes minimize, maximize and close through UI Automation. A
+window that draws its own frame, which is most Electron and Chromium apps, paints
+the glyphs into its client area and exposes no element behind them, so the tree
+walk finds three buttons' worth of nothing. Those windows still answer
+`WM_NCHITTEST`, because that is how Windows decides what the mouse is over, and
+the answer carries the button's identity and its geometry. Neru samples the
+caption for those answers and merges what it finds into the element list
+(`platform/windows/caption.go`, `native/windows/caption.go`). The search is
+bounded by time, probe count and candidate count, and a window that publishes its
+buttons and also answers here still gets one hint each.
 
 **Linux is ⚠️, not a stub.** `atspi.Client` enables assistive-tech mode, finds
 the active frame, and walks it (`ClickableNodes`) emitting native AT-SPI role
