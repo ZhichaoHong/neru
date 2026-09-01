@@ -2,7 +2,6 @@ package accessibility
 
 import (
 	"context"
-	"strings"
 	"sync"
 
 	"go.uber.org/zap"
@@ -12,25 +11,6 @@ import (
 	"github.com/y3owk1n/neru/internal/domain/element"
 	"github.com/y3owk1n/neru/internal/ports"
 )
-
-// lowerFilter lowercases the filter's text comparisons once, keeping the
-// conversion out of the per-element matching that follows.
-func lowerFilter(filter ports.ElementFilter) ports.ElementFilter {
-	filter.TitleContains = strings.ToLower(filter.TitleContains)
-	filter.DescriptionContains = strings.ToLower(filter.DescriptionContains)
-	filter.ValueContains = strings.ToLower(filter.ValueContains)
-
-	if len(filter.TextContainsList) > 0 {
-		lowered := make([]string, len(filter.TextContainsList))
-		for index, text := range filter.TextContainsList {
-			lowered[index] = strings.ToLower(text)
-		}
-
-		filter.TextContainsList = lowered
-	}
-
-	return filter
-}
 
 // elementCollector gathers elements from every source at once. The sources are
 // independent, so they run in parallel and append to one list under one mutex.

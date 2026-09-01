@@ -2,7 +2,7 @@ package services
 
 import (
 	"context"
-	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -411,16 +411,13 @@ func (s *HintService) generateHintsVision(
 		return allElements
 	}
 
-	// Filter vision-detected elements by configured roles
-	for _, element := range windowElements {
-		if len(filter.Roles) == 0 {
-			allElements = append(allElements, element)
-
-			continue
-		}
-
-		if slices.Contains(filter.Roles, element.Role()) {
-			allElements = append(allElements, element)
+	// Same filter the tree half is held to. Roles used to be the only thing checked
+	// here, so --text was inert under vision and half-working under hybrid: it
+	// filtered the tree elements and silently passed every OCR one, which reads as a
+	// filter that lost results rather than one that was ignored.
+	for _, detected := range windowElements {
+		if filter.Matches(detected) {
+			allElements = append(allElements, detected)
 		}
 	}
 
@@ -561,13 +558,23 @@ func (s *HintService) hintFilter(
 	filter.IncludeScreenCapture = cfg.IncludeScreenCaptureHints
 
 	// Text filter: an element matches when any term matches.
+	//
+	// Lowercased here because ElementFilter.Matches compares against lowercased
+	// element text and does not fold the terms itself - once per activation rather
+	// than once per element. Nothing upstream folds them: --text arrives from
+	// splitCSV verbatim, so an uppercase term used to match nothing at all.
 	if len(filterTextContains) > 0 {
-		filter.TitleContains = filterTextContains[0]
-		filter.DescriptionContains = filterTextContains[0]
+		first := strings.ToLower(filterTextContains[0])
 
-		filter.ValueContains = filterTextContains[0]
-		if len(filterTextContains) > 1 {
-			filter.TextContainsList = filterTextContains[1:]
+		filter.TitleContains = first
+		filter.DescriptionContains = first
+		filter.ValueContains = first
+
+		for _, term := range filterTextContains[1:] {
+			filter.TextContainsList = append(
+				filter.TextContainsList,
+				strings.ToLower(term),
+			)
 		}
 
 		s.logger.Debug("Applying text filter",

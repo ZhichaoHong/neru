@@ -54,7 +54,7 @@ func (a *Adapter) addMenubarElements(
 				continue
 			}
 
-			if a.MatchesFilter(element, filter) {
+			if filter.Matches(element) {
 				elements = append(elements, element)
 			}
 		}
@@ -101,7 +101,7 @@ func (a *Adapter) addMenubarElements(
 					continue
 				}
 
-				if a.MatchesFilter(elem, filter) {
+				if filter.Matches(elem) {
 					localElements = append(localElements, elem)
 				}
 			}

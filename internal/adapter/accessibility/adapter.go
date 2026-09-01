@@ -103,8 +103,6 @@ func (a *Adapter) ClickableElements(
 		return nil, ctxErr
 	}
 
-	filter = lowerFilter(filter)
-
 	a.logger.Debug("Getting clickable elements",
 		zap.Int("role_count", len(filter.Roles)),
 		zap.Bool("include_menubar", filter.IncludeMenubar),
@@ -402,7 +400,7 @@ func (a *Adapter) processClickableNodes(
 			continue
 		}
 
-		if a.MatchesFilter(elem, filter) {
+		if filter.Matches(elem) {
 			elements = append(elements, elem)
 		}
 	}
@@ -472,7 +470,7 @@ func (a *Adapter) processClickableNodesConcurrent(
 					continue
 				}
 
-				if a.MatchesFilter(elem, filter) {
+				if filter.Matches(elem) {
 					localElements = append(localElements, elem)
 				}
 			}
