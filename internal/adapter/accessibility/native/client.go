@@ -225,6 +225,14 @@ func (c *Client) PerformAction(
 
 	switch actionType {
 	case action.TypeLeftClick:
+		// Every click ends whatever drag was in progress first, left included.
+		// A click of its own posts a press and a release, so skipping this left
+		// the recorded hold claiming a button the physical one no longer had:
+		// the drag ended at the click, and the next toggle resolved to a release
+		// for an already-released button and did nothing. Two presses of one
+		// toggle key then read as two clicks.
+		ensureMouseUp()
+
 		performActionErr = LeftClickAtPoint(point, restoreCursor, modifiers)
 	case action.TypeRightClick:
 		ensureMouseUp()
