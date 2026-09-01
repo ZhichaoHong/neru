@@ -212,8 +212,13 @@ func MouseDown(point image.Point, button action.MouseButton, modifiers action.Mo
 		return err
 	}
 
+	// Recorded before the press is posted so that a move racing it is still
+	// walked as a drag; rolled back when the press fails.
+	heldButtons.SetDown(button, point, modifiers)
+
 	err = sendMouseInput(flagsForButton(button).down, 0)
 	if err != nil {
+		heldButtons.Clear(button)
 		hold.release()
 
 		return err
@@ -235,7 +240,16 @@ func MouseUp(point image.Point, button action.MouseButton, modifiers action.Modi
 		return err
 	}
 
-	return sendMouseInput(flagsForButton(button).up, 0)
+	err = sendMouseInput(flagsForButton(button).up, 0)
+	if err != nil {
+		// The record stays: the button is still down as far as the system is
+		// concerned, and whatever releases held buttons next has to know.
+		return err
+	}
+
+	heldButtons.Clear(button)
+
+	return nil
 }
 
 // ScrollWheel scrolls vertically at the current cursor position, holding
