@@ -320,11 +320,16 @@ func (h *handlerState) refreshGridForMonitorMove(targetBounds image.Rectangle) {
 	h.setScreenBounds(targetBounds)
 	normalizedBounds := geometry.NormalizeToLocalCoordinates(targetBounds)
 
-	gridInstance := domainGrid.NewGridWithLabels(
+	// The scale is still read live rather than passed in with the bounds: the
+	// cursor was already warped onto the target monitor before this runs
+	// (moveCursorToMonitor), which is the monitor the scale is asked about, and on
+	// a mixed-DPI desk the source monitor's scale would plan the wrong grid.
+	gridInstance := domainGrid.NewGridAtScale(
 		h.config.GridCharacters(),
 		h.config.Grid.RowLabels,
 		h.config.Grid.ColLabels,
 		normalizedBounds,
+		h.screenScale(),
 		h.logger,
 	)
 	h.grid.Context.SetGridInstanceValue(gridInstance)

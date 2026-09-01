@@ -17,12 +17,17 @@ const (
 )
 
 // CacheKey is a key for the grid cache.
+//
+// scale is part of the identity because two monitors of the same resolution set
+// to different scaling plan different grids, and so does one monitor after the
+// user moves the scaling slider.
 type CacheKey struct {
 	characters string
 	rowLabels  string
 	colLabels  string
 	width      int
 	height     int
+	scale      float64
 }
 
 // CacheEntry is an entry in the grid cache.
@@ -53,7 +58,7 @@ func Prewarm(characters string, sizes []image.Rectangle) {
 	}
 
 	for _, rect := range sizes {
-		if _, ok := gridCache.get(characters, "", "", rect); ok {
+		if _, ok := gridCache.get(characters, "", "", rect, 1); ok {
 			continue
 		}
 
@@ -74,6 +79,7 @@ func newCache(capacity int, ttl time.Duration) *Cache {
 func (c *Cache) get(
 	characters, rowLabels, colLabels string,
 	bounds image.Rectangle,
+	scale float64,
 ) ([]*Cell, bool) {
 	cacheKey := CacheKey{
 		characters: characters,
@@ -81,6 +87,7 @@ func (c *Cache) get(
 		colLabels:  colLabels,
 		width:      bounds.Dx(),
 		height:     bounds.Dy(),
+		scale:      scale,
 	}
 
 	c.mu.Lock()
@@ -112,6 +119,7 @@ func (c *Cache) get(
 func (c *Cache) put(
 	characters, rowLabels, colLabels string,
 	bounds image.Rectangle,
+	scale float64,
 	cells []*Cell,
 ) {
 	cacheKey := CacheKey{
@@ -120,6 +128,7 @@ func (c *Cache) put(
 		colLabels:  colLabels,
 		width:      bounds.Dx(),
 		height:     bounds.Dy(),
+		scale:      scale,
 	}
 
 	c.mu.Lock()

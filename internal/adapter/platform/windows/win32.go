@@ -24,6 +24,17 @@ const (
 	processQueryLimitedInformation = 0x1000
 	processNameWin32               = 0
 	monitorDefaultToNearest        = 2
+
+	// mdtEffectiveDPI is GetDpiForMonitor's MONITOR_DPI_TYPE for the DPI the
+	// monitor is actually being driven at, which is the one the user's scaling
+	// slider sets. The raw and angular types describe the panel, not the
+	// setting, and would report a scale nothing on screen is drawn at.
+	mdtEffectiveDPI = 0
+
+	// dpiUnscaled is the DPI that means "no scaling". Windows expresses a
+	// scaling percentage as a DPI against this baseline: 96 is 100%, 144 is
+	// 150%.
+	dpiUnscaled = 96.0
 )
 
 type monitorInfoEx struct {
@@ -72,6 +83,10 @@ var (
 	dwmapi = windows.NewLazySystemDLL("dwmapi.dll")
 
 	procDwmGetWindowAttribute = dwmapi.NewProc("DwmGetWindowAttribute")
+
+	shcore = windows.NewLazySystemDLL("shcore.dll")
+
+	procGetDpiForMonitor = shcore.NewProc("GetDpiForMonitor")
 )
 
 // dwmwaExtendedFrameBounds asks DWM for the frame the user sees, without the
@@ -396,6 +411,58 @@ func activeScreenBounds() (image.Rectangle, error) {
 	}
 
 	return monitors[0].bounds, nil
+}
+
+// activeScreenScale is the physical pixels per logical unit of the screen
+// activeScreenBounds answers for, so a caller pairing the two describes one
+// monitor rather than two. It picks the monitor the same way - from the cursor,
+// nearest - because on a mixed-DPI desktop a scale read from a different monitor
+// than the bounds is worse than no scale at all.
+func activeScreenScale() float64 {
+	cursor, err := cursorPosition()
+	if err != nil {
+		return 1
+	}
+
+	return ScreenScaleAt(cursor)
+}
+
+// ScreenScaleAt is the physical pixels per logical unit of the monitor the given
+// desktop point sits on, or the nearest one when the point is off every monitor.
+//
+// It is exported for the overlay drawing a panel per monitor: a mixed-DPI desk
+// needs each panel sized by the monitor it lands on, not by the one the cursor
+// happens to be on.
+//
+// It returns 1 rather than an error when the DPI cannot be read. A missing scale
+// degrades to the unscaled behavior this platform had before it existed, and
+// nothing this feeds can do anything more useful with an error than that.
+func ScreenScaleAt(point image.Point) float64 {
+	monitor, _, _ := procMonitorFromPoint.Call(
+		packMonitorPoint(point),
+		uintptr(monitorDefaultToNearest),
+	)
+	if monitor == 0 {
+		return 1
+	}
+
+	var dpiX, dpiY uint32
+
+	// GetDpiForMonitor returns an HRESULT, so zero is success.
+	hresult, _, _ := procGetDpiForMonitor.Call(
+		monitor,
+		uintptr(mdtEffectiveDPI),
+		uintptr(unsafe.Pointer(&dpiX)),
+		uintptr(unsafe.Pointer(&dpiY)),
+	)
+	if hresult != 0 || dpiX == 0 {
+		return 1
+	}
+
+	// Only the horizontal DPI is used. Windows drives both axes from one
+	// scaling percentage, and a caller wanting square cells from a single
+	// factor cannot use two.
+	return float64(dpiX) / dpiUnscaled
 }
 
 func packMonitorPoint(point image.Point) uintptr {

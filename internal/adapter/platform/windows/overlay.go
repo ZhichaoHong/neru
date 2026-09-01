@@ -30,6 +30,7 @@ const (
 	swpShowWindow    = 0x0040
 
 	defaultOverlayFont = "Segoe UI"
+	fwRegular          = 400
 	fwBold             = 700
 	dtCenter           = 0x00000001
 	dtVCenter          = 0x00000004
@@ -164,11 +165,26 @@ type triFill struct {
 	color    uint32
 }
 
+// FontWeight is the GDI weight a text draw renders at. It exists because the
+// weight is per label rather than per backend: badges are bold so they read
+// against arbitrary content underneath, while grid labels are regular so a
+// three-character coordinate fits its cell. The darwin backend draws the same
+// split.
+type FontWeight int
+
+const (
+	// FontWeightRegular is FW_NORMAL.
+	FontWeightRegular FontWeight = fwRegular
+	// FontWeightBold is FW_BOLD.
+	FontWeightBold FontWeight = fwBold
+)
+
 type textDraw struct {
 	text       string
 	rect       image.Rectangle
 	fontFamily string
 	fontSize   float64
+	fontWeight FontWeight
 	color      uint32
 }
 
@@ -219,6 +235,9 @@ type OverlayWindow struct {
 	height  int
 	visible bool
 	dirty   bool
+
+	// scale is the cached monitor scale for bounds. See Scale and refreshScale.
+	scale float64
 
 	// excludeFromCapture is remembered rather than only applied, because the
 	// affinity is a property of the HWND and every path that recreates one
@@ -284,6 +303,7 @@ func NewOverlayWindow() (*OverlayWindow, error) {
 	overlay := &OverlayWindow{
 		bounds: bounds,
 	}
+	overlay.refreshScale()
 
 	var createErr error
 
@@ -313,6 +333,7 @@ func NewOverlayWindowAt(posX, posY, width, height int) (*OverlayWindow, error) {
 	overlay := &OverlayWindow{
 		bounds: image.Rect(posX, posY, posX+width, posY+height),
 	}
+	overlay.refreshScale()
 
 	var createErr error
 
@@ -422,11 +443,70 @@ func (o *OverlayWindow) Bounds() image.Rectangle {
 // SetColorBlendRGB is a no-op since the overlay now uses per-pixel alpha.
 func (o *OverlayWindow) SetColorBlendRGB(uint32) {}
 
+// Scale is the physical pixels per logical unit of the monitor this overlay
+// covers. Everything the window rasterizes is in physical pixels, so a caller
+// drawing something whose size is an intention about apparent size - a readable
+// label, a visible border - multiplies by this first.
+//
+// It is a cached field rather than a live query because the grid draw loop reads
+// it per cell, thousands of times per keystroke, and a syscall there would be
+// paid for an answer that changes when the window moves. refreshScale is what
+// keeps it current.
+func (o *OverlayWindow) Scale() float64 {
+	if o == nil {
+		return 1
+	}
+
+	o.mu.Lock()
+	scale := o.scale
+	o.mu.Unlock()
+
+	if scale < 1 {
+		return 1
+	}
+
+	return scale
+}
+
+// refreshScale re-reads the monitor scale for the window's current rectangle.
+//
+// Called wherever the rectangle is set, and again from Show: a user moving the
+// scaling slider changes the DPI without changing the resolution, so the resize
+// paths' unchanged-rect short circuit would otherwise leave the cached factor
+// describing the old setting for the rest of the session.
+//
+// It must not be called with o.mu held.
+func (o *OverlayWindow) refreshScale() {
+	if o == nil {
+		return
+	}
+
+	o.mu.Lock()
+	bounds := o.bounds
+	o.mu.Unlock()
+
+	scale := 1.0
+	if bounds.Empty() {
+		scale = activeScreenScale()
+	} else {
+		scale = ScreenScaleAt(image.Point{
+			X: bounds.Min.X + bounds.Dx()/2,
+			Y: bounds.Min.Y + bounds.Dy()/2,
+		})
+	}
+
+	o.mu.Lock()
+	o.scale = scale
+	o.mu.Unlock()
+}
+
 // Show displays the overlay without taking focus.
 func (o *OverlayWindow) Show() {
 	if o == nil {
 		return
 	}
+
+	o.refreshScale()
 
 	runOnOverlayUI(func() {
 		if o.hwnd == 0 {
@@ -514,6 +594,8 @@ func (o *OverlayWindow) ResizeToActiveScreen() error {
 	o.dirty = true
 	o.mu.Unlock()
 
+	o.refreshScale()
+
 	if o.hwnd == 0 {
 		return nil
 	}
@@ -568,6 +650,8 @@ func (o *OverlayWindow) ResizeTo(posX, posY, width, height int) error {
 	o.height = height
 	o.dirty = true
 	o.mu.Unlock()
+
+	o.refreshScale()
 
 	if o.hwnd == 0 {
 		return nil
@@ -718,6 +802,7 @@ func (o *OverlayWindow) DrawTextCentered(
 	bounds image.Rectangle,
 	fontFamily string,
 	fontSize float64,
+	weight FontWeight,
 	color uint32,
 ) {
 	if o == nil || text == "" || bounds.Empty() {
@@ -728,12 +813,17 @@ func (o *OverlayWindow) DrawTextCentered(
 		fontFamily = defaultOverlayFont
 	}
 
+	if weight <= 0 {
+		weight = FontWeightBold
+	}
+
 	o.mu.Lock()
 	o.texts = append(o.texts, textDraw{
 		text:       text,
 		rect:       bounds,
 		fontFamily: fontFamily,
 		fontSize:   fontSize,
+		fontWeight: weight,
 		color:      color,
 	})
 	o.dirty = true
@@ -1109,7 +1199,7 @@ func renderTextAlphaInto(pixels []byte, bufW, bufH int, textCmd textDraw) {
 	}
 
 	hFont, _, _ := procCreateFontW.Call(
-		uintptr(size), 0, 0, 0, fwBold, 0, 0, 0, 1, 0, 0, 0, 0,
+		uintptr(size), 0, 0, 0, uintptr(textCmd.fontWeight), 0, 0, 0, 1, 0, 0, 0, 0,
 		uintptr(unsafe.Pointer(fontName)),
 	)
 

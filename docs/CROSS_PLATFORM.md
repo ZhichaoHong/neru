@@ -929,13 +929,51 @@ important thing to know before touching overlay code:
 | **Click-through**     | `setIgnoresMouseEvents:YES`              | XFixes empty input region              | empty `wl_surface` input region                  | `WS_EX_TRANSPARENT`                |
 | **Always on top**     | `NSScreenSaverWindowLevel`               | `_NET_WM_STATE_ABOVE` + `MapRaised`    | overlay layer                                    | `HWND_TOPMOST`                     |
 | **Focus prevention**  | non-activating panel                     | `override_redirect=YES`                | controlled keyboard interactivity                | `WS_EX_NOACTIVATE`                 |
-| **HiDPI**             | dynamic `contentsScale` + backing-change callback | `Xft.dpi`, one global factor  | `wl_output` scale + `wp_fractional_scale_v1` / `wp_viewporter` | not explicit           |
+| **HiDPI**             | dynamic `contentsScale` + backing-change callback | `Xft.dpi`, one global factor  | `wl_output` scale + `wp_fractional_scale_v1` / `wp_viewporter` | `GetDpiForMonitor`, per monitor |
 | **Multi-monitor**     | per-display clamping, screen-change tracking | all monitors enumerated, per-monitor render, live RandR hotplug | one `wl_surface` per output (max 16), live hotplug | cursor-screen tracking, separate indicator/sticky windows |
 | **Buffers**           | layer-backed, OS-managed                 | single Cairo surface                   | triple-buffered SHM pool                         | single pixel buffer                |
 | **Rounded rects / borders** | NSBezierPath                       | Cairo arc path + stroke                | Cairo arc path + stroke                          | software SDF fill + multi-pass stroke |
 | **Text**              | NSFontManager                            | Cairo `select_font_face` / `show_text` | Cairo `select_font_face` / `show_text`           | GDI `CreateFontW` + `DrawTextW` + alpha composite |
 | **Coordinate origin** | bottom-left (Y-flipped in the adapter)   | top-left                               | top-left                                         | top-left (negative DIB height)     |
 | **Thread model**      | main-thread dispatch                     | `renderMu` mutex                       | `renderMu` mutex (also guards `wl_display`)      | dedicated UI thread (`LockOSThread`) |
+
+### HiDPI
+
+A configured font size, border width or indicator size is an **intention about
+apparent size**, so it is multiplied by the scale factor wherever the backend
+draws in physical pixels: X11 by `Xft.dpi`, Windows by `GetDpiForMonitor` on the
+monitor being drawn on. macOS and Wayland need nothing, since both hand out a
+scaled coordinate space.
+
+Three rules keep this from spreading:
+
+- **Scale in the primitives, not in `BuildStyle`.** The Styles are shared with
+  macOS, which must not see a scaled size. A caller sizing a box from a font -
+  a hint badge, a label background - applies the factor itself, because the
+  primitive it hands the box to cannot know what the box was sized from.
+- **Positions and rectangles are never scaled.** They already arrive in the
+  space the surface is addressed in.
+- **Grid cell counts are planned in logical space** (`grid.NewGridAtScale`), not
+  in the drawing layer: the cell-size constants describe apparent size, so a 4K
+  monitor at 150% would otherwise plan cells too small to read. The cells are
+  still cut from the physical bounds, so the grid covers the same glass.
+
+Windows reads its factor through the optional `ports.ScreenScaler` extension
+(Tier 3), which no other platform implements - an unimplemented port means
+scale 1, which is the right answer for a platform whose bounds are already
+logical.
+
+### Font weight
+
+Weight is per label, not per backend, and it is not configurable. Badges drawn
+over arbitrary content - hints, the mode and sticky-modifier indicators, the
+monitor-select label - are bold so they stay readable against whatever is
+underneath. Grid and recursive-grid cell labels are regular, because a
+three-character coordinate in a cell sized for it has no room to spare.
+
+macOS says this with a `bold:` argument on `resolveFont:`, Windows with a
+`FontWeight` argument on `DrawTextCentered`. X11 is bold everywhere and Wayland
+is mixed; both predate the rule and do not follow it yet.
 
 ### Animation
 
@@ -1318,8 +1356,8 @@ Current ports: `SystemPort`, `AccessibilityPort`, `OverlayPort`, `EventTapPort`,
 `HotkeyPort`, `IPCPort`, `VisionPort`, `TextInputPort`, `KeyFeedPort`,
 `AppWatcherPort`, `SystrayPort`, `FontResolver`.
 
-Optional extensions, reached by type assertion (Tier 3): `RelativeCursorMover`
-and `CursorSynchronizer` on `SystemPort`, `HotkeyReleaseRegistrar` and
+Optional extensions, reached by type assertion (Tier 3): `RelativeCursorMover`,
+`CursorSynchronizer` and `ScreenScaler` on `SystemPort`, `HotkeyReleaseRegistrar` and
 `HotkeyHealthReporter` on `HotkeyPort`, `OverlayKeyboardPassthroughReporter` on
 `EventTapPort`, `OverlayCapabilityReporter` on `OverlayPort`, and
 `SyntheticModifierSink` on the `tap.Tap` backend contract (Linux only — it is

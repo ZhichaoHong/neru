@@ -78,6 +78,24 @@ func (o *winOverlay) Healthy() bool {
 	return o != nil && o.window != nil && o.window.Healthy()
 }
 
+// scale is physical pixels per logical unit of the monitor this overlay covers.
+//
+// Windows hands out unvirtualized physical pixels, so a font size or a border
+// width - both intentions about apparent size - buys two thirds of the glass on
+// a 150% monitor that it buys on a 100% one. The X11 backend has the same
+// problem from Xft.dpi and answers it the same way: the primitives below apply
+// this factor, and a caller sizing a box from a font multiplies by it first.
+//
+// Positions and rectangles are not scaled. They arrive in the physical pixels
+// the window is addressed in, which is the space they are already correct in.
+func (o *winOverlay) scale() float64 {
+	if o == nil || o.window == nil {
+		return 1
+	}
+
+	return o.window.Scale()
+}
+
 // WindowPtr returns nil on Windows. The native HWND is not a memory pointer,
 // and no consumer dereferences this value, so the overlay window handle stays
 // internal (reachable via the platform window) instead of being smuggled
@@ -381,6 +399,7 @@ func (o *winOverlay) redrawGridWithoutFlush() {
 				cell.Bounds(),
 				style.FontFamily(),
 				style.LabelFontSize(),
+				winplatform.FontWeightRegular,
 				text,
 			)
 		}
@@ -439,6 +458,7 @@ func (o *winOverlay) drawSubgrid(bounds image.Rectangle, style gridcomponent.Sty
 			cell,
 			style.FontFamily(),
 			style.LabelFontSize()*winSubgridFontScale,
+			winplatform.FontWeightRegular,
 			style.TextColorARGB(),
 		)
 	}
@@ -462,7 +482,7 @@ func (o *winOverlay) drawCellBorder(
 		return
 	}
 
-	o.window.StrokeRect(bounds, border, lineWidth)
+	o.window.StrokeRect(bounds, border, lineWidth*o.scale())
 }
 
 // drawTextCentered draws text in the family it is given, and resolves
@@ -479,16 +499,23 @@ func (o *winOverlay) drawCellBorder(
 //
 // The mode and sticky-modifier indicator badges do still resolve, because
 // they read raw configuration rather than a Style.
+//
+// The font size arrives in logical units and is scaled here (see scale), so a
+// caller sizing the box it draws into from the same font size has to apply the
+// factor itself.
+//
+// The weight is the caller's, not a default: see winplatform.FontWeight.
 func (o *winOverlay) drawTextCentered(
 	text string,
 	bounds image.Rectangle,
 	fontFamily string,
 	fontSize float64,
+	weight winplatform.FontWeight,
 	color uint32,
 ) {
 	if o == nil || o.window == nil {
 		return
 	}
 
-	o.window.DrawTextCentered(text, bounds, fontFamily, fontSize, color)
+	o.window.DrawTextCentered(text, bounds, fontFamily, fontSize*o.scale(), weight, color)
 }

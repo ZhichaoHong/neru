@@ -119,16 +119,39 @@ func (h *handlerState) createGridInstance() *domainGrid.Grid {
 	// Normalize normalizedBounds to window-local coordinates using helper function
 	normalizedBounds := geometry.NormalizeToLocalCoordinates(screenBounds)
 
-	gridInstance := domainGrid.NewGridWithLabels(
+	gridInstance := domainGrid.NewGridAtScale(
 		h.config.GridCharacters(),
 		h.config.Grid.RowLabels,
 		h.config.Grid.ColLabels,
 		normalizedBounds,
+		h.screenScale(),
 		h.logger,
 	)
 	h.grid.Context.SetGridInstanceValue(gridInstance)
 
 	return gridInstance
+}
+
+// screenScale is how many of the active screen's own pixels one logical unit is
+// worth, which is what lets grid sizing pick cells by apparent size.
+//
+// A platform that does not implement ports.ScreenScaler hands out logical
+// coordinates already, so 1 is its answer rather than a fallback. See
+// docs/CROSS_PLATFORM.md ("The three tiers").
+func (h *handlerState) screenScale() float64 {
+	scaler, ok := h.system.(ports.ScreenScaler)
+	if !ok {
+		return 1
+	}
+
+	scale, err := scaler.ScreenScale(h.ctx)
+	if err != nil {
+		h.logger.Warn("Failed to read screen scale; planning the grid unscaled", zap.Error(err))
+
+		return 1
+	}
+
+	return scale
 }
 
 // initializeGridManager initializes the grid manager with the new grid instance.
@@ -151,11 +174,12 @@ func (h *handlerState) initializeGridManager(gridInstance *domainGrid.Grid) {
 		}
 
 		bounds := image.Rect(0, 0, screenBounds.Dx(), screenBounds.Dy())
-		gridInstance = domainGrid.NewGridWithLabels(
+		gridInstance = domainGrid.NewGridAtScale(
 			h.config.GridCharacters(),
 			h.config.Grid.RowLabels,
 			h.config.Grid.ColLabels,
 			bounds,
+			h.screenScale(),
 			h.logger,
 		)
 	}

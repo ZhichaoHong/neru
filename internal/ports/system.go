@@ -175,6 +175,29 @@ type RelativeCursorMover interface {
 	MoveCursorBy(ctx context.Context, delta image.Point) (handled bool, err error)
 }
 
+// ScreenScaler is an optional SystemPort extension: report how many physical
+// pixels one logical unit of the active screen is worth. It pairs with
+// ScreenBounds and must describe the same screen, or a caller on a mixed-DPI
+// desktop combines two monitors' numbers.
+//
+// It exists because a size expressed as a number of pixels is an intention about
+// apparent size - a grid cell the user can aim at, a label they can read - and
+// only one platform makes the caller do that conversion. macOS and Wayland hand
+// out logical coordinates, so their answer is 1 and they do not implement this.
+// Windows reports unvirtualized physical pixels (its manifest declares
+// per-monitor DPI awareness V2), so on a 150% monitor the same constant buys two
+// thirds of the glass it buys elsewhere.
+//
+// Treat a missing implementation as 1, never as an error: 1 is the unscaled
+// behavior, and every consumer has to work on the platforms that do not
+// implement it anyway.
+type ScreenScaler interface {
+	// ScreenScale returns physical pixels per logical unit of the active
+	// screen. It is >= 1; implementations return 1 when the platform cannot
+	// answer, since a caller can do nothing more useful with the error.
+	ScreenScale(ctx context.Context) (float64, error)
+}
+
 // CursorSettler is an optional SystemPort extension for platforms that
 // animate cursor movement asynchronously. SettleCursor finishes any in-flight
 // animation immediately — stopping it and placing the cursor at the endpoint

@@ -17,18 +17,6 @@ import (
 
 var _ manager.MonitorSelector = (*Manager)(nil)
 
-// monitorSelectScale is the HiDPI factor handed to the shared panel geometry.
-//
-// It is 1 because both sides of the calculation are already in physical pixels:
-// cmd/neru's embedded manifest declares permonitorv2, so GetMonitorInfoW hands
-// back unvirtualized monitor bounds, and the layered window's pixel buffer is
-// physical too. Nothing to convert. X11 needs its Xft.dpi factor there.
-//
-// The consequence is that a configured size means the same number of physical
-// pixels on every monitor, so a panel looks smaller on a higher-DPI one. That
-// matches the rest of this backend, which does no DPI scaling anywhere.
-const monitorSelectScale = 1.0
-
 // DrawMonitorSelect renders one labeled panel per monitor for the interactive
 // monitor picker, then shows the overlay.
 //
@@ -70,9 +58,11 @@ func (m *Manager) DrawMonitorSelect(
 	borderColor := badge.ParseHexARGB(style.BorderColor)
 	textColor := badge.ParseHexARGB(style.TextColor)
 	subtitleColor := badge.ParseHexARGB(style.SubtitleTextColor)
-	borderWidth := float64(max(style.BorderWidth, 1))
-	labelFont := monitorselect.FontOr(style.FontSize, monitorselect.DefaultFontSize)
-	subtitleFont := monitorselect.FontOr(
+	// The sizes stay unscaled here because the factor is per monitor: see the
+	// loop below.
+	baseBorderWidth := float64(max(style.BorderWidth, 1))
+	baseLabelFont := monitorselect.FontOr(style.FontSize, monitorselect.DefaultFontSize)
+	baseSubtitleFont := monitorselect.FontOr(
 		style.SubtitleFontSize,
 		monitorselect.DefaultSubtitleFontSize,
 	)
@@ -90,8 +80,21 @@ func (m *Manager) DrawMonitorSelect(
 			win.FillRect(target.Bounds.Sub(desktop.Min), backdrop)
 		}
 
+		// This is the one overlay drawn on every monitor at once, so the scale is
+		// read per target rather than once for the frame: on a mixed-DPI desk the
+		// panels are meant to look the same size, not to be the same number of
+		// pixels. The window's own scale would describe whichever monitor its
+		// span happens to start on.
+		scale := winplatform.ScreenScaleAt(image.Pt(
+			target.Bounds.Min.X+target.Bounds.Dx()/2,
+			target.Bounds.Min.Y+target.Bounds.Dy()/2,
+		))
+		labelFont := baseLabelFont * scale
+		subtitleFont := baseSubtitleFont * scale
+		borderWidth := baseBorderWidth * scale
+
 		panel, labelRect, subtitleRect, radius := monitorselect.PanelLayout(
-			target.Bounds, target.Label, target.Subtitle, style, monitorSelectScale,
+			target.Bounds, target.Label, target.Subtitle, style, scale,
 		)
 
 		localPanel := panel.Sub(desktop.Min)
@@ -107,6 +110,7 @@ func (m *Manager) DrawMonitorSelect(
 			labelRect.Sub(desktop.Min),
 			style.FontFamily,
 			labelFont,
+			winplatform.FontWeightBold,
 			textColor,
 		)
 
@@ -118,6 +122,7 @@ func (m *Manager) DrawMonitorSelect(
 				subtitleRect.Sub(desktop.Min),
 				style.SubtitleFontFamily,
 				subtitleFont,
+				winplatform.FontWeightBold,
 				subtitleColor,
 			)
 		}
