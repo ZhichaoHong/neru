@@ -101,7 +101,17 @@ func cursorPosition() (image.Point, error) {
 	return image.Point{X: int(position.x), Y: int(position.y)}, nil
 }
 
+// moveCursorTo puts the cursor at point. While a button is held the move is
+// walked rather than jumped; see moveCursorDragging.
 func moveCursorTo(point image.Point) error {
+	if heldButtons.AnyDown() {
+		return moveCursorDragging(point)
+	}
+
+	return setCursorPos(point)
+}
+
+func setCursorPos(point image.Point) error {
 	ret, _, err := procSetCursorPos.Call(uintptr(point.X), uintptr(point.Y))
 
 	callErr := win32Bool(ret, err)

@@ -219,8 +219,13 @@ func MouseDown(point image.Point, button action.MouseButton, modifiers action.Mo
 		return err
 	}
 
+	// Recorded before the press is posted so that a move racing it is still
+	// walked as a drag; rolled back when the press fails.
+	heldButtons.SetDown(button, point, modifiers)
+
 	err = buttonEventAt(point, flagsForButton(button).down)
 	if err != nil {
+		heldButtons.Clear(button)
 		hold.release()
 
 		return err
@@ -242,7 +247,16 @@ func MouseUp(point image.Point, button action.MouseButton, modifiers action.Modi
 
 	defer hold.release()
 
-	return buttonEventAt(point, flagsForButton(button).up)
+	err = buttonEventAt(point, flagsForButton(button).up)
+	if err != nil {
+		// The record stays: the button is still down as far as the system is
+		// concerned, and whatever releases held buttons next has to know.
+		return err
+	}
+
+	heldButtons.Clear(button)
+
+	return nil
 }
 
 // wheelEvent is one MOUSEEVENTF_WHEEL or MOUSEEVENTF_HWHEEL record, before
