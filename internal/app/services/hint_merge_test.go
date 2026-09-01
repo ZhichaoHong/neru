@@ -70,19 +70,36 @@ func TestMergeVisionWithTree(t *testing.T) {
 		{
 			// Containment alone would keep this: OCR read one antialiased pixel
 			// past the tree element's bounds on every side.
-			name:   "a label a pixel wider than its button is dropped on overlap",
+			name:   "a label a pixel wider than its button is dropped",
 			tree:   map[string]image.Rectangle{"button": image.Rect(100, 100, 160, 130)},
 			vision: map[string]image.Rectangle{"label": image.Rect(99, 99, 161, 131)},
 			want:   []string{"button"},
 		},
 		{
-			// 40x20 inside 100x100: contained, so containment answers it. The
-			// point of the case is that IOU alone would not - 0.08 is nowhere
-			// near the threshold - which is why the rule is not IOU only.
-			name:   "a small label in a large tree element is dropped on containment",
+			// 40x20 inside 100x100: fully covered, so coverage is 1. The point of
+			// the case is that union-based IOU would not answer it - 0.08 is
+			// nowhere near any usable threshold - which is why the rule measures
+			// coverage of the OCR rect instead.
+			name:   "a small label in a large tree element is dropped",
 			tree:   map[string]image.Rectangle{"panel": image.Rect(0, 0, 100, 100)},
 			vision: map[string]image.Rectangle{"label": image.Rect(10, 10, 50, 30)},
 			want:   []string{"panel"},
+		},
+		{
+			// Measured off a File Explorer navigation pane, and the case that
+			// forced the rule from containment to coverage. OCR reads the row's
+			// text with the expander chevron attached, so the region starts 76px
+			// left of the row it belongs to: not contained, and an IOU of 0.28
+			// against a row three times the text's height. It was surviving as a
+			// second label on a row that already had one.
+			name: "a row's text read with its expander chevron is dropped",
+			tree: map[string]image.Rectangle{
+				"row": image.Rect(-1444, 984, -1289, 1048),
+			},
+			vision: map[string]image.Rectangle{
+				"row_text": image.Rect(-1520, 1009, -1292, 1030),
+			},
+			want: []string{"row"},
 		},
 		{
 			// A quarter of each rectangle's area overlaps, which is an IOU of
@@ -111,13 +128,12 @@ func TestMergeVisionWithTree(t *testing.T) {
 			want:   []string{"tab_one", "tab_two"},
 		},
 		{
-			// The same strip measured off a real screen, which is what forced
-			// spanning to be tested on centers: Windows Terminal's tab items are
-			// 48px high and the line OCR reads off them is 18px, so no tab is ever
-			// fully inside the strip's rect.
-			// Measured off a Windows Terminal window: the strip's rect covers the
-			// first tab and its close button but neither of the second tab's, and it
-			// encloses nothing at all, so only centers see it as spanning two.
+			// The same strip measured off a Windows Terminal window. It encloses
+			// nothing at all - the tab items are 48px high and the line OCR read
+			// off them is 18px - so neither containment nor whole-rectangle
+			// spanning sees it. Coverage answers it here (0.70 of the strip sits
+			// on the first tab); the synthetic case above is the one that still
+			// needs spanning.
 			name: "a tab strip taller than the text OCR read off it is dropped",
 			tree: map[string]image.Rectangle{
 				"1_tab_one":   image.Rect(21, 64, 393, 112),
