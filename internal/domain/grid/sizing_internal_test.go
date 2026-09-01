@@ -13,7 +13,7 @@ func TestPlanGridDimensions_DefaultLimitKeepsLegacyTwoKeyRegions(t *testing.T) {
 	const characters = "abcdefghijklmnopqrstuvwxyz1234567890!@#$%^&*()-_=+"
 
 	alpha := newGridAlphabet(characters, "", "")
-	plan := planGridDimensions(1920, 1080, alpha, DefaultMaxLabelLength)
+	plan := planGridDimensions(1920, 1080, alpha, DefaultMaxLabelLength, 1)
 
 	if plan.labelLength != LabelLength2 {
 		t.Fatalf("label length = %d, want the automatic two-key fixture", plan.labelLength)

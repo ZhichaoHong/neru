@@ -69,8 +69,14 @@ func (g *GridComponent) UpdateConfig(cfg *config.Config, logger *zap.Logger) {
 						zap.Bool("rowLabelsChanged", rowLabelsChanged),
 						zap.Bool("colLabelsChanged", colLabelsChanged),
 						zap.Bool("maxLabelLengthChanged", maxLabelLengthChanged))
+					// The scale comes off the old grid rather than the port: this
+					// runs under the mode handler's lock and must stay pure, and
+					// the screen has not changed, only the character set.
+					options := cfg.GridOptions()
+					options.Scale = oldGrid.Scale()
+
 					newGrid := domainGrid.NewGridWithOptions(
-						cfg.GridOptions(),
+						options,
 						oldGrid.Bounds(),
 						logger,
 					)

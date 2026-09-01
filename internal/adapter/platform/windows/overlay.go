@@ -36,6 +36,7 @@ const (
 	htTransparent = ^uintptr(0) // HTTRANSPARENT, LRESULT -1
 
 	defaultOverlayFont = "Segoe UI"
+	fwRegular          = 400
 	fwBold             = 700
 	dtCenter           = 0x00000001
 	dtVCenter          = 0x00000004
@@ -135,6 +136,22 @@ type wndClassEx struct {
 	hIconSm       windows.Handle
 }
 
+// FontWeight is the weight a text draw renders at. It exists because the weight
+// is per label rather than per backend: badges are bold so they read against
+// arbitrary content underneath, while grid labels are regular so a
+// three-character coordinate fits its cell. The darwin backend draws the same
+// split.
+//
+// The values are the GDI weights, which DirectWrite happens to share.
+type FontWeight int
+
+const (
+	// FontWeightRegular is FW_NORMAL.
+	FontWeightRegular FontWeight = fwRegular
+	// FontWeightBold is FW_BOLD.
+	FontWeightBold FontWeight = fwBold
+)
+
 // drawKind says which primitive a drawCmd is.
 type drawKind uint8
 
@@ -152,15 +169,16 @@ const (
 // earlier one — the ordering every other backend has, and the one a hint
 // badge drawn over its neighbor relies on.
 type drawCmd struct {
-	kind     drawKind
-	rect     image.Rectangle
-	color    uint32
-	radius   float64
-	width    int
-	vertices [triangleVertices]image.Point
-	text     string
-	font     string
-	fontSize float64
+	kind       drawKind
+	rect       image.Rectangle
+	color      uint32
+	radius     float64
+	width      int
+	vertices   [triangleVertices]image.Point
+	text       string
+	font       string
+	fontSize   float64
+	fontWeight FontWeight
 }
 
 // bounds is the rectangle a command can touch, before clipping to the surface.
@@ -242,6 +260,9 @@ type OverlayWindow struct {
 	height  int
 	visible bool
 	dirty   bool
+
+	// scale is the cached monitor scale for bounds. See Scale and refreshScale.
+	scale float64
 
 	cmds         []drawCmd
 	clearPending bool
@@ -331,6 +352,7 @@ func NewOverlayWindowAt(posX, posY, width, height int) (*OverlayWindow, error) {
 
 func newOverlayWindowWithBounds(bounds image.Rectangle) (*OverlayWindow, error) {
 	overlay := &OverlayWindow{bounds: bounds}
+	overlay.refreshScale()
 
 	var createErr error
 
@@ -380,6 +402,31 @@ func (o *OverlayWindow) Bounds() image.Rectangle {
 	return o.bounds
 }
 
+// Scale is the physical pixels per logical unit of the monitor this overlay
+// covers. Everything the window rasterizes is in physical pixels, so a caller
+// drawing something whose size is an intention about apparent size - a readable
+// label, a visible border - multiplies by this first.
+//
+// It is a cached field rather than a live query because the grid draw loop reads
+// it per cell, thousands of times per keystroke, and a syscall there would be
+// paid for an answer that changes when the window moves. refreshScale is what
+// keeps it current.
+func (o *OverlayWindow) Scale() float64 {
+	if o == nil {
+		return 1
+	}
+
+	o.mu.Lock()
+	scale := o.scale
+	o.mu.Unlock()
+
+	if scale < 1 {
+		return 1
+	}
+
+	return scale
+}
+
 // Backend names the surface this window presents through: "direct2d" when
 // DirectComposition came up, "gdi" otherwise, and "" before the window exists.
 func (o *OverlayWindow) Backend() string {
@@ -422,6 +469,8 @@ func (o *OverlayWindow) Show() {
 	if o == nil {
 		return
 	}
+
+	o.refreshScale()
 
 	runOnOverlayUI(func() {
 		if o.hwnd == 0 {
@@ -492,6 +541,8 @@ func (o *OverlayWindow) ResizeToActiveScreen() error {
 	}
 
 	if bounds == o.bounds && o.width == bounds.Dx() && o.height == bounds.Dy() {
+		o.refreshScale()
+
 		return nil
 	}
 
@@ -516,6 +567,8 @@ func (o *OverlayWindow) ResizeTo(posX, posY, width, height int) error {
 	o.height = height
 	o.dirty = true
 	o.mu.Unlock()
+
+	o.refreshScale()
 
 	if o.handle() == 0 {
 		return nil
@@ -647,12 +700,13 @@ func (o *OverlayWindow) FillTriangle(vertexA, vertexB, vertexC image.Point, colo
 	})
 }
 
-// DrawTextCentered renders centered text inside bounds.
+// DrawTextCentered renders centered text inside bounds at the given weight.
 func (o *OverlayWindow) DrawTextCentered(
 	text string,
 	bounds image.Rectangle,
 	fontFamily string,
 	fontSize float64,
+	weight FontWeight,
 	color uint32,
 ) {
 	if o == nil || text == "" || bounds.Empty() {
@@ -663,13 +717,18 @@ func (o *OverlayWindow) DrawTextCentered(
 		fontFamily = defaultOverlayFont
 	}
 
+	if weight <= 0 {
+		weight = FontWeightBold
+	}
+
 	o.queue(drawCmd{
-		kind:     drawText,
-		rect:     bounds,
-		color:    color,
-		text:     text,
-		font:     fontFamily,
-		fontSize: fontSize,
+		kind:       drawText,
+		rect:       bounds,
+		color:      color,
+		text:       text,
+		font:       fontFamily,
+		fontSize:   fontSize,
+		fontWeight: weight,
 	})
 }
 
@@ -702,6 +761,9 @@ func (o *OverlayWindow) DrawPointerGlyph(
 		image.Rect(center.X-halfSize, center.Y-halfSize, center.X+halfSize, center.Y+halfSize),
 		fontFamily,
 		float64(size),
+		// A stand-in for the cursor sits over arbitrary content, so it reads
+		// like a badge rather than like a cell label.
+		FontWeightBold,
 		color,
 	)
 }
@@ -748,6 +810,39 @@ func (o *OverlayWindow) Flush() error {
 	}
 
 	return nil
+}
+
+// refreshScale re-reads the monitor scale for the window's current rectangle.
+//
+// Called wherever the rectangle is set, and again from Show: a user moving the
+// scaling slider changes the DPI without changing the resolution, so the resize
+// paths' unchanged-rect short circuit would otherwise leave the cached factor
+// describing the old setting for the rest of the session.
+//
+// It must not be called with o.mu held.
+func (o *OverlayWindow) refreshScale() {
+	if o == nil {
+		return
+	}
+
+	o.mu.Lock()
+	bounds := o.bounds
+	o.mu.Unlock()
+
+	var scale float64
+
+	if bounds.Empty() {
+		scale = activeScreenScale()
+	} else {
+		scale = ScreenScaleAt(image.Point{
+			X: bounds.Min.X + bounds.Dx()/2,
+			Y: bounds.Min.Y + bounds.Dy()/2,
+		})
+	}
+
+	o.mu.Lock()
+	o.scale = scale
+	o.mu.Unlock()
 }
 
 // handle reads the window handle under the lock: a rebuild on the UI thread

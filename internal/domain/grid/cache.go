@@ -15,6 +15,10 @@ const (
 )
 
 // CacheKey is a key for the grid cache.
+//
+// scale is part of the identity because two monitors of the same resolution set
+// to different scaling plan different grids, and so does one monitor after the
+// user moves the scaling slider.
 type CacheKey struct {
 	characters     string
 	rowLabels      string
@@ -22,6 +26,7 @@ type CacheKey struct {
 	maxLabelLength int
 	width          int
 	height         int
+	scale          float64
 }
 
 // CacheEntry is an entry in the grid cache.
@@ -45,7 +50,12 @@ var (
 	gridCacheEnabled = true
 )
 
-func newCacheKey(alpha gridAlphabet, maxLabelLength int, bounds image.Rectangle) CacheKey {
+func newCacheKey(
+	alpha gridAlphabet,
+	maxLabelLength int,
+	bounds image.Rectangle,
+	scale float64,
+) CacheKey {
 	return CacheKey{
 		characters:     alpha.characters,
 		rowLabels:      string(alpha.rowChars),
@@ -53,6 +63,7 @@ func newCacheKey(alpha gridAlphabet, maxLabelLength int, bounds image.Rectangle)
 		maxLabelLength: maxLabelLength,
 		width:          bounds.Dx(),
 		height:         bounds.Dy(),
+		scale:          scale,
 	}
 }
 

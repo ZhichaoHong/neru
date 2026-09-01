@@ -11,6 +11,7 @@ import (
 	hintscomponent "github.com/y3owk1n/neru/internal/adapter/overlay/render/hints"
 	"github.com/y3owk1n/neru/internal/adapter/overlay/render/motion"
 	recursivegridcomponent "github.com/y3owk1n/neru/internal/adapter/overlay/render/recursivegrid"
+	winplatform "github.com/y3owk1n/neru/internal/adapter/platform/windows"
 	"github.com/y3owk1n/neru/internal/domain"
 	"github.com/y3owk1n/neru/internal/domain/recursivegrid"
 )
@@ -87,7 +88,8 @@ func (o *winOverlay) DrawHints(
 
 			if bw := float64(max(style.BoundaryBorderWidth(), 0)); bw > 0 {
 				o.window.StrokeRoundedRect(
-					element, bdr, badge.ParseHexARGB(style.BoundaryBorderColor()), bw,
+					element, bdr, badge.ParseHexARGB(style.BoundaryBorderColor()),
+					bw*o.scale(),
 				)
 			}
 		}
@@ -95,14 +97,19 @@ func (o *winOverlay) DrawHints(
 		// Size the badge to the label text, not the element. hint.Size() is the
 		// element's bounding box (hint.Bounds().Size()), so using it makes the
 		// badge as large as the element (e.g. oversized boxes over big buttons).
+		//
+		// The geometry is planned from the scaled font rather than the logical
+		// one, because drawTextCentered draws the label at the scaled size: a
+		// badge sized from the logical font would clip the glyphs inside it.
 		fontSize := float64(max(style.FontSize(), 1))
-		paddingX := badge.AutoPadding(fontSize, style.PaddingX(), true)
-		paddingY := badge.AutoPadding(fontSize, style.PaddingY(), false)
+		drawnFontSize := fontSize * o.scale()
+		paddingX := badge.AutoPadding(drawnFontSize, style.PaddingX(), true)
+		paddingY := badge.AutoPadding(drawnFontSize, style.PaddingY(), false)
 		badgeWidth := badge.EstimateTextWidth(
 			hint.Label(),
-			fontSize,
+			drawnFontSize,
 		) + paddingX*winPaddingMultiplier
-		badgeHeight := badge.EstimateTextHeight(fontSize) + paddingY*winPaddingMultiplier
+		badgeHeight := badge.EstimateTextHeight(drawnFontSize) + paddingY*winPaddingMultiplier
 
 		// The corner radius is resolved from the badge's size alone — where the
 		// badge lands does not change how round it is — and then capped so an
@@ -132,7 +139,7 @@ func (o *winOverlay) DrawHints(
 		}
 
 		bdr := float64(radius)
-		borderWidth := float64(max(style.BorderWidth(), 0))
+		borderWidth := float64(max(style.BorderWidth(), 0)) * o.scale()
 
 		o.window.FillRoundedRect(
 			bounds, bdr, badge.ParseHexARGB(style.BackgroundColor()),
@@ -158,6 +165,7 @@ func (o *winOverlay) DrawHints(
 			bounds,
 			style.FontFamily(),
 			fontSize,
+			winplatform.FontWeightBold,
 			badge.ParseHexARGB(textColor),
 		)
 	}
@@ -319,7 +327,7 @@ func (o *winOverlay) paintRecursiveGrid(
 		}
 
 		if style.LineWidthF() > 0 {
-			o.window.StrokeRect(cell, style.LineColorARGB(), style.LineWidthF())
+			o.window.StrokeRect(cell, style.LineColorARGB(), style.LineWidthF()*o.scale())
 		}
 
 		if idx < len(keyRunes) {
@@ -338,6 +346,7 @@ func (o *winOverlay) paintRecursiveGrid(
 					cell,
 					style.FontFamily(),
 					style.LabelFontSize(),
+					winplatform.FontWeightRegular,
 					style.TextColorARGB(),
 				)
 			}
@@ -367,7 +376,11 @@ func (o *winOverlay) drawGridPointer(pointer recursivegridcomponent.VirtualPoint
 
 	o.window.DrawPointerGlyph(
 		pointer.Position,
-		pointer.Size,
+		// Size is an apparent size, and the glyph's box is derived from it, so
+		// the two scale together. This goes to the window's own text call,
+		// which does not scale on its caller's behalf the way drawTextCentered
+		// does.
+		int(float64(pointer.Size)*o.scale()),
 		pointer.Char,
 		pointer.FontName,
 		badge.ParseHexARGB(pointer.FillColor),
@@ -391,7 +404,7 @@ func (o *winOverlay) drawFilledRect(
 	o.window.FillRoundedRect(bounds, radius, fill)
 
 	if lineWidth > 0 {
-		o.window.StrokeRoundedRect(bounds, radius, border, lineWidth)
+		o.window.StrokeRoundedRect(bounds, radius, border, lineWidth*o.scale())
 	}
 }
 
@@ -400,7 +413,9 @@ func (o *winOverlay) drawRecursiveLabelBackground(
 	cell image.Rectangle,
 	style recursivegridcomponent.Style,
 ) {
-	fontSize := style.LabelFontSize()
+	// Scaled because the label drawn over this box goes through
+	// drawTextCentered, which scales the same font size.
+	fontSize := style.LabelFontSize() * o.scale()
 	paddingX := badge.AutoPadding(fontSize, style.LabelBackgroundPaddingX(), true)
 	paddingY := badge.AutoPadding(fontSize, style.LabelBackgroundPaddingY(), false)
 	width := badge.EstimateTextWidth(label, fontSize) + paddingX*winPaddingMultiplier
@@ -434,6 +449,7 @@ func (o *winOverlay) drawSubKeyMiniGrid(
 			subCell.Bounds,
 			style.FontFamily(),
 			style.SubKeyPreviewFontSizeF(),
+			winplatform.FontWeightRegular,
 			style.SubKeyPreviewTextColorARGB(),
 		)
 	}
