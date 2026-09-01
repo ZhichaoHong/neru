@@ -143,6 +143,7 @@ func BuildTree(_ context.Context, root *Element, opts TreeOptions) (*TreeNode, e
 	}
 
 	controls := enumerateClickableElements(root.hwnd, opts.Roles)
+	controls = append(controls, captionButtonElements(root.hwnd, opts.Roles, controls)...)
 
 	children := make([]*TreeNode, 0, len(controls))
 

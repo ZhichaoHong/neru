@@ -792,7 +792,7 @@ put in force.
 | **Client**              | `InfraAXClient` → ObjC bridge               | `ATSPIClient` → `org.a11y.atspi`                   | `UIAClient` → raw COM vtables        |
 | **Files**               | `element_darwin.go`, `tree.go`              | `element_linux.go`, `atspi_linux.go`               | `element_windows.go`, `uia_windows.go`, `tree_windows.go` |
 | **Traversal**           | Full recursive walk of the AXUIElement hierarchy | Recursive walk of the active frame's subtree, depth/node capped | Shallow walk of root-level nodes |
-| **Sources collected**   | Frontmost + all windows, popovers, menubar, dock, notification center, Stage Manager, PIP | Active frame's subtree only          | Root element's children only         |
+| **Sources collected**   | Frontmost + all windows, popovers, menubar, dock, notification center, Stage Manager, PIP | Active frame's subtree only          | Root element's children, plus hit-tested caption buttons |
 | **Filtering**           | Role matching, size/position heuristics, excluded apps, dedup | Native AT-SPI roles, `SHOWING` state, on-screen extents | `IsControlElement` + `IsContentElement`, non-zero bounds |
 | **Strategies**          | `axtree` (default), `vision` and `hybrid`, incl. per-app overrides | `axtree` (default), `vision` and `hybrid`, text only | `axtree` (default), `vision` and `hybrid`, text only |
 | **Popovers / menus**    | ✅ dedicated detection                      | ⚠️ only if inside the active frame's subtree       | 🟡                                   |
@@ -834,6 +834,34 @@ Linux). The result is an AT-SPI frame with a single empty child, so hints find
 nothing inside such windows. Launch the app with
 `--force-renderer-accessibility` to force the full tree. Native GTK/Qt apps and
 Firefox need no flag. This is Chromium behavior, not a Neru limitation.
+
+**Caption buttons on Windows are hit-tested, not read.** A window with the system
+frame publishes minimize, maximize and close as UIA buttons. A window that draws
+its own frame - Teams, Explorer's newer views, most Electron apps - paints the
+glyphs into its client area and publishes nothing behind them, so hints had three
+obvious targets and no elements to attach badges to. Vision cannot cover it
+either: the Windows strategy is OCR only, and the glyphs are icon-font
+characters.
+
+What such a window does still answer is `WM_NCHITTEST`, because that is how
+Windows decides what the mouse is over. The answer carries both the button's
+identity (`HTMINBUTTON`, `HTMAXBUTTON`, `HTCLOSE`) and, since the message takes a
+screen point, its geometry.
+[caption.go](../internal/adapter/platform/windows/caption.go) samples the caption
+band for those answers and grows each hit into an exact rectangle;
+[the accessibility side](../internal/adapter/accessibility/native/windows/caption.go)
+turns them into ordinary `button` elements, so the role filter, `--role` and
+`--text` all apply as usual. A window that already published its buttons and also
+answers the hit test - Edge does both - gets one badge each, not two.
+
+The search is bounded rather than exhaustive: it asks the top-level window and
+the descendants overlapping the caption band, since a Chromium frame answers only
+on the child that draws the caption, and it abandons the whole window when a probe
+goes unanswered. Two rects and a guessed third would be worse than none, because a
+badge still invites the click. Two alternatives were tried first and dropped:
+`WM_GETTITLEBARINFOEX` returns the three rects in the app's own DIP space from a
+Chromium frame rather than in screen pixels, and the MSAA titlebar object names
+its children correctly but reports every `accLocation` as zero.
 
 **Picking the active frame on Wayland.** The AT-SPI `ACTIVE` state is unreliable
 on wlroots compositors (niri, Sway, Hyprland) — the focused window can report
