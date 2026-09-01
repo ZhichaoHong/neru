@@ -101,8 +101,13 @@ func (a *Adapter) DetectElements(
 		return nil, err
 	}
 
+	// Word level always, whatever the activation asked for. Per-line rects merge
+	// distinct controls - a five-tab strip is one 488px rect, and a hint acts at its
+	// element's center, so four tabs get no hint - and mergeWordRuns rebuilds the
+	// labels more carefully than the engine's line segmentation does. splitWord
+	// decides whether that merge runs, not what the engine is asked for.
 	words, stats, err := winplatform.RecognizeText(img, winplatform.OCRParams{
-		WordLevel: splitWord,
+		WordLevel: true,
 		TimeoutMS: cfg.RequestTimeoutMS,
 	})
 	if err != nil {
@@ -132,6 +137,10 @@ func (a *Adapter) DetectElements(
 		// filter look live when it cannot be.
 		0,
 	)
+
+	if !splitWord {
+		regions = mergeWordRuns(regions)
+	}
 
 	merged := MergeRegions(regions, cfg.MergeIOUThreshold)
 

@@ -56,10 +56,11 @@ func (a *Adapter) DetectElements(
 		detectRectangles = 1
 	}
 
-	var wordLevel C.int
-	if splitWord {
-		wordLevel = 1
-	}
+	// Word level always: mergeWordRuns rebuilds labels from words more carefully
+	// than Vision's line segmentation does, and splitWord decides whether that merge
+	// runs rather than what the framework is asked for. See its comment for why
+	// per-line rects cost reachability.
+	wordLevel := C.int(1)
 
 	cCfg := C.NeruVisionConfig{
 		detectText:             detectText,
@@ -115,6 +116,10 @@ func (a *Adapter) DetectElements(
 			region.Label = C.GoString(cRegion.label)
 		}
 		regions = append(regions, region)
+	}
+
+	if !splitWord {
+		regions = mergeWordRuns(regions)
 	}
 
 	// Merge overlapping regions via NMS
