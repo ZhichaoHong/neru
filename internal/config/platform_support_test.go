@@ -225,14 +225,14 @@ func TestInertWords_Steps(t *testing.T) {
 			want:   []string{hideCursorAction},
 		},
 		{
-			name:   "horizontal scroll is reported on Windows",
-			steps:  []string{"action scroll_right"},
+			name:   "an action Windows cannot inject is reported there",
+			steps:  []string{"action feed"},
 			target: parity.Windows,
-			want:   []string{"scroll_right"},
+			want:   []string{"feed"},
 		},
 		{
-			name:   "horizontal scroll is silent on Linux",
-			steps:  []string{"action scroll_right"},
+			name:   "the same action is silent on Linux",
+			steps:  []string{"action feed"},
 			target: parity.Linux,
 			want:   nil,
 		},
@@ -279,10 +279,9 @@ func TestInertWords_Steps(t *testing.T) {
 }
 
 // TestInertWords_LeavesTheShippedBindingsSilentWhereTheyWork keeps the warning
-// about what somebody wrote. The shipped scroll bindings name scroll_left and
-// scroll_right, which inject nothing on Windows — a Known Gaps entry rather than
-// a line a user can go and fix — which is why the reading is of the user's files
-// and not of the merged configuration, and why Windows is not asserted here.
+// about what somebody wrote. No default binding names an action that is inert on
+// any platform, so all three are asserted; the day one does, the fix is the
+// default or the action, not an exemption here.
 func TestInertWords_LeavesTheShippedBindingsSilentWhereTheyWork(t *testing.T) {
 	t.Parallel()
 
@@ -294,7 +293,7 @@ func TestInertWords_LeavesTheShippedBindingsSilentWhereTheyWork(t *testing.T) {
 		steps = append(steps, actions...)
 	}
 
-	for _, target := range []parity.Platform{parity.Darwin, parity.Linux} {
+	for _, target := range []parity.Platform{parity.Darwin, parity.Linux, parity.Windows} {
 		found := config.InertWords(config.Written{Steps: steps}, target).Names()
 		if len(found) > 0 {
 			t.Errorf(

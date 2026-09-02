@@ -650,9 +650,23 @@ Go; only the final injection primitive differs:
 | Linux Wayland KDE     | libei via `org.freedesktop.portal.RemoteDesktop`                              |
 | Windows               | `SendInput` / `SetCursorPos`                                                  |
 
-**The one behavioral difference:** Windows `ScrollAtCursor` ignores `deltaX`, so
-horizontal scrolling is a no-op there. Everything else behaves the same on all
-three platforms.
+**The one behavioral difference:** Windows injects a scroll in a single step,
+while macOS and Linux animate it under `smooth_scroll`. Both axes reach all three
+platforms — on Windows the horizontal one is `MOUSEEVENTF_HWHEEL`, whose sign is
+the opposite of the shared convention and is negated in `ScrollWheel`
+(`platform/windows/input.go`). What a horizontal scroll then moves is the target
+window's decision everywhere: it arrives as `WM_MOUSEHWHEEL` on Windows and as
+wheel buttons 6/7 on X11, and an application that handles neither stays put.
+
+**Units:** a caller's delta is in pixels. macOS injects those pixels literally
+through `kCGScrollEventUnitPixel`; Windows and Linux each divide by their own
+copy of `scrollPixelsPerNotch` (30) before sending wheel units, so the same
+binding travels roughly the same distance on all three. The two constants have to
+stay equal. On Windows the converted value is then clamped to a signed short,
+which is all `WM_MOUSEWHEEL` carries: `scroll_step_full` is 1000000 pixels and
+would otherwise wrap into a short scroll in whichever direction the truncation
+landed on. A `go_bottom` that stops short of the bottom is the application's own
+per-event ceiling, which Chromium for one applies.
 
 **Modifiers on a scroll** reach the injection primitive by two different routes,
 because only one of the primitives has a field for them. macOS stamps
@@ -1199,8 +1213,6 @@ green in every cell while an option means nothing, which is exactly how
 | `smooth_scroll.duration_per_pixel` | option | ✅ | ✅ | ❌ | the Windows scroll is injected in one step; macOS and Linux animate it, and on X11 the steps are whole wheel notches because X has no smaller scroll to send |
 | `hide_cursor` | action | ✅ | ❌ | ❌ | a Wayland client may not hide another client's cursor, and the blessed Linux stack is Wayland; Windows has no equivalent either |
 | `show_cursor` | action | ✅ | ❌ | ❌ | a Wayland client may not hide another client's cursor, and the blessed Linux stack is Wayland; Windows has no equivalent either |
-| `scroll_left` | action | ✅ | ✅ | ❌ | the Windows wheel event carries no horizontal delta, so a sideways scroll injects nothing |
-| `scroll_right` | action | ✅ | ✅ | ❌ | the Windows wheel event carries no horizontal delta, so a sideways scroll injects nothing |
 | `feed` | action | ✅ | ✅ | ❌ | Windows has no key-injection path yet, so the key it would post is never sent; the key_feed capability reports stub to match |
 
 <!-- END GENERATED PLATFORM SUPPORT -->
@@ -1316,11 +1328,10 @@ working, which is exactly why the build exists.
    it stays declared everywhere and is tracked as this entry instead
 7. Smooth cursor and smooth scroll animation — not implemented
 8. Modifier passthrough and `PostModifierEvent` — no-ops
-9. Horizontal scroll — `ScrollAtCursor` ignores `deltaX`
-10. Font resolution — alias mapping only, no system font enumeration
-11. `neru services` — every subcommand returns `CodeNotSupported`, where macOS
+9. Font resolution — alias mapping only, no system font enumeration
+10. `neru services` — every subcommand returns `CodeNotSupported`, where macOS
     installs a launchd agent and Linux a systemd user unit
-12. IPC endpoint, client side — the daemon's endpoint is scoped to one user on
+11. IPC endpoint, client side — the daemon's endpoint is scoped to one user on
     every platform, but only the Unix client checks that for itself before
     connecting. A named pipe carries no ownership a client can read without
     opening it, so the Windows CLI trusts the name it derives from its own SID.

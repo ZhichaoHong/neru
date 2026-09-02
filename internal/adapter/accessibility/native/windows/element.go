@@ -10,7 +10,6 @@ import (
 
 	winplatform "github.com/y3owk1n/neru/internal/adapter/platform/windows"
 	"github.com/y3owk1n/neru/internal/config"
-	"github.com/y3owk1n/neru/internal/derrors"
 	"github.com/y3owk1n/neru/internal/domain/action"
 	"github.com/y3owk1n/neru/internal/domain/element"
 )
@@ -305,20 +304,13 @@ func MouseUp(button action.MouseButton) error {
 
 // ScrollAtCursor scrolls the mouse, with modifiers presented as held.
 //
-// Windows scroll injection has no horizontal axis, so a horizontal delta is
-// dropped — a long-standing, documented no-op. Dropping a modifier along with
-// it is a different matter: the user asked for a zoom and would be told it
-// happened, so a horizontal scroll carrying one is refused instead.
+// Whether a horizontal scroll moves anything is the target window's call:
+// MOUSEEVENTF_HWHEEL arrives as WM_MOUSEHWHEEL, which a window has to handle,
+// and an old Win32 app that ignores it stays put. Nothing here can tell, so
+// the injection reports success either way — the same bargain the vertical
+// axis has always made.
 func ScrollAtCursor(deltaX int, deltaY int, modifiers action.Modifiers) error {
-	if deltaY == 0 && deltaX != 0 && modifiers != 0 {
-		return derrors.Newf(
-			derrors.CodeNotSupported,
-			"horizontal scroll is not supported on Windows, so its %s modifier cannot be honored",
-			modifiers,
-		)
-	}
-
-	return winplatform.ScrollWheel(deltaY, modifiers)
+	return winplatform.ScrollWheel(deltaX, deltaY, modifiers)
 }
 
 // CurrentCursorPosition returns the cursor position.

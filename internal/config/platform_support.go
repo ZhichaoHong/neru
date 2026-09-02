@@ -449,9 +449,9 @@ func PlatformSupport() parity.Declaration {
 //
 // It is what the platform-support warning is judged against, and it is the
 // user's files rather than the loaded configuration on purpose. Only what
-// somebody wrote can be reported to them: the shipped scroll bindings name
-// scroll_left, which injects nothing on Windows, and telling every Windows user
-// about a line they never typed is noise about somebody else's bug
+// somebody wrote can be reported to them: the shipped configuration writes
+// smooth_scroll.steps, which Windows never animates, and telling every Windows
+// user about a line they never typed is noise about somebody else's bug
 // (docs/CROSS_PLATFORM.md, Known Gaps).
 type Written struct {
 	// Options maps a TOML path to the value written at it. A non-scalar value

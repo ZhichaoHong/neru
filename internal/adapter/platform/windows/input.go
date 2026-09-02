@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"image"
+	"math"
 	"unsafe"
 
 	"github.com/y3owk1n/neru/internal/domain/action"
@@ -25,6 +26,7 @@ const (
 	mouseeventfMiddleDown = 0x0020
 	mouseeventfMiddleUp   = 0x0040
 	mouseeventfWheel      = 0x0800
+	mouseeventfHwheel     = 0x1000
 	mouseeventfAbsolute   = 0x8000
 
 	keyeventfExtendedKey = 0x0001
@@ -39,6 +41,15 @@ const (
 	neruInjectedTag = 0x4E455255 // 'N','E','R','U'
 
 	wheelDelta = 120
+
+	// scrollPixelsPerNotch is how many pixels of a caller's delta make one
+	// wheel notch. The scroll service speaks in pixels (scroll_step = 50,
+	// scroll_step_half = 500, scroll_step_full = 1000000), macOS injects those
+	// pixels literally through kCGScrollEventUnitPixel, and the Linux twin of
+	// this constant lives in accessibility/native/linux/element.go. All three
+	// have to agree, or the same binding travels a different distance per
+	// platform.
+	scrollPixelsPerNotch = 30
 )
 
 // mouseInput and input mirror Win32 MOUSEINPUT/INPUT on 64-bit Windows (40 bytes).
@@ -252,21 +263,55 @@ func MouseUp(point image.Point, button action.MouseButton, modifiers action.Modi
 	return nil
 }
 
-// ScrollWheel scrolls vertically at the current cursor position, holding
-// modifiers down for the duration.
+// ScrollWheel scrolls at the current cursor position, holding modifiers down for
+// the duration.
 //
-// A SendInput wheel event carries no modifier field — unlike a CGEvent, which
-// takes flags — so the only way to present a held ctrl is to make the keyboard
-// hold it (modifiers.go), wheel, and put the keyboard back.
-func ScrollWheel(deltaLines int, modifiers action.Modifiers) error {
-	if deltaLines == 0 {
+// A SendInput wheel event carries no modifier field, unlike a CGEvent, which
+// takes flags. So the only way to present a held ctrl is to make the keyboard
+// hold it (modifiers.go), wheel, and put the keyboard back. One hold covers both
+// axes: a diagonal scroll is two wheel events, and releasing between them would
+// send the second one unmodified.
+//
+// Each axis is a separate event because MOUSEEVENTF_WHEEL and
+// MOUSEEVENTF_HWHEEL both read the delta out of the same mouseData field, so
+// they cannot ride one INPUT record.
+func ScrollWheel(deltaX int, deltaY int, modifiers action.Modifiers) error {
+	if deltaX == 0 && deltaY == 0 {
 		return nil
 	}
 
 	hold := holdModifiers(modifiers)
 	defer hold.release()
 
-	return sendMouseInput(mouseeventfWheel, uint32(int32(deltaLines)*wheelDelta))
+	if deltaY != 0 {
+		err := sendMouseInput(mouseeventfWheel, wheelUnits(deltaY))
+		if err != nil {
+			return err
+		}
+	}
+
+	if deltaX == 0 {
+		return nil
+	}
+
+	// MOUSEEVENTF_HWHEEL counts a rotation to the right as positive, while the
+	// shared convention is macOS's: a positive deltaX scrolls left. Hence the
+	// negation, the one place the two disagree.
+	return sendMouseInput(mouseeventfHwheel, wheelUnits(-deltaX))
+}
+
+// wheelUnits converts a caller's pixel delta into the WHEEL_DELTA units
+// mouseData carries.
+//
+// The result is clamped because WM_MOUSEWHEEL hands the target window a signed
+// short: past that the value wraps, and a scroll_step_full of 1000000 pixels
+// wraps into a short scroll in whichever direction the truncation lands on.
+// Clamping means "as far as one wheel event reaches", which is at least the
+// direction the binding asked for.
+func wheelUnits(pixels int) uint32 {
+	units := int64(pixels) * wheelDelta / scrollPixelsPerNotch
+
+	return uint32(int32(min(max(units, math.MinInt16), math.MaxInt16)))
 }
 
 // CurrentCursorPosition returns the current cursor location.
