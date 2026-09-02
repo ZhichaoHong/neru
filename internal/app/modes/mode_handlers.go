@@ -320,6 +320,17 @@ func (h *handlerState) handleSearchInputKey(key string) {
 		return
 	}
 
+	// A shifted keystroke is named as a combo, so the capital the user typed
+	// arrives as "shift+c" and is several runes long. Dropping it would take the
+	// letter out of the query silently, leaving a search the user did not type
+	// and cannot see is wrong.
+	if shifted, isShifted := configpkg.ShiftedCharacter(normalizedKey); isShifted {
+		ctx.SetSearchQuery(ctx.SearchQuery() + shifted)
+		h.applyHintSearchFilter()
+
+		return
+	}
+
 	if utf8.RuneCountInString(key) != 1 {
 		return
 	}

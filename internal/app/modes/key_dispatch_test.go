@@ -196,6 +196,68 @@ func TestHandleKeyPressRoutesAllKeysToHintSearch(t *testing.T) {
 	}
 }
 
+// TestHintSearchTakesShiftedLetters pins the capital a shifted keystroke types.
+// The taps name it as a combo, so "shift+c" is what arrives when the user
+// presses C — and a search box that took only single-rune keys dropped it,
+// leaving a query missing a letter the user typed and no sign of why the
+// results stopped matching.
+func TestHintSearchTakesShiftedLetters(t *testing.T) {
+	t.Parallel()
+
+	appState := state.NewAppState()
+	appState.SetMode(domain.ModeHints)
+
+	handler := newHandlerWithState(handlerState{
+		config:        &configpkg.Config{},
+		logger:        zap.NewNop(),
+		appState:      appState,
+		modifierState: state.NewModifierState(),
+		hints: &components.HintsComponent{
+			Context: &hintscomponent.Context{},
+		},
+		modes: map[domain.Mode]Mode{},
+	})
+
+	calendar, _ := element.NewElement(
+		"calendar",
+		image.Rect(0, 0, 20, 20),
+		element.RoleButton,
+		element.WithTitle("Calendar"),
+	)
+	chats, _ := element.NewElement(
+		"chats",
+		image.Rect(40, 0, 60, 20),
+		element.RoleButton,
+		element.WithTitle("Chats"),
+	)
+	collection := domainhint.NewCollection([]*domainhint.Interface{
+		mustNewModeHint("AA", calendar),
+		mustNewModeHint("AS", chats),
+	})
+
+	handler.mu.Lock()
+	handler.hints.Context.SetManager(domainhint.NewManager(handler.logger, &handler.mu))
+
+	err := handler.hints.Context.SetHints(collection)
+	if err != nil {
+		t.Fatalf("SetHints: %v", err)
+	}
+
+	handler.hints.Context.SetSearchActive(true)
+	handler.mu.Unlock()
+
+	handler.HandleKeyPress("shift+c")
+	handler.HandleKeyPress("a")
+
+	if got := handler.hints.Context.SearchQuery(); got != "Ca" {
+		t.Fatalf("search query = %q, want %q", got, "Ca")
+	}
+
+	if got := handler.hints.Context.Hints().Count(); got != 1 {
+		t.Fatalf("hints matching %q = %d, want 1", "Ca", got)
+	}
+}
+
 // newHeldRepeatTestHandler builds a handler in recursive-grid mode where "j" is
 // bound to a held-repeat action, with long delays so the repeat goroutine
 // blocks on its initial timer and never dispatches during the test.

@@ -3,6 +3,8 @@ package config
 import (
 	"runtime"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/y3owk1n/neru/internal/derrors"
 	"github.com/y3owk1n/neru/internal/domain/keyvocab"
@@ -99,6 +101,35 @@ func NormalizeKeyForComparison(key string) string {
 	// All other keys (named keys, plain characters, modifier combos) are already
 	// lowercased by strings.ToLower above and pass through as-is.
 	return key
+}
+
+// ShiftedCharacter returns the character a shift-only combo types, and whether
+// the key is one.
+//
+// A shifted keystroke reaches Neru as a combo — the event taps name the key
+// pressed and the modifiers held, so a capital C arrives as "shift+c" and not
+// as "C". Anything reading the key stream as text has to turn that back into
+// the character the user pressed, or the keystroke is lost.
+//
+// Only letters answer. A combo carrying ctrl, alt or cmd is a binding rather
+// than text, and the shifted form of everything else depends on the keyboard
+// layout — "shift+1" is "!" on a US layout and """ on a German one, and the key
+// name alone does not say which. Those still report false, so a caller drops
+// the keystroke instead of typing a character from the wrong layout.
+func ShiftedCharacter(key string) (string, bool) {
+	base, isShifted := strings.CutPrefix(
+		NormalizeKeyForComparison(key), modifierNameShift+"+",
+	)
+	if !isShifted {
+		return "", false
+	}
+
+	char, size := utf8.DecodeRuneInString(base)
+	if size != len(base) || !unicode.IsLetter(char) {
+		return "", false
+	}
+
+	return string(unicode.ToUpper(char)), true
 }
 
 // HasPassthroughModifier reports whether the key contains a modifier that can
