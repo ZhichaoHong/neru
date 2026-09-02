@@ -122,7 +122,7 @@ func (m *Manager) DrawMonitorSelect(
 				subtitleRect.Sub(desktop.Min),
 				style.SubtitleFontFamily,
 				subtitleFont,
-				winplatform.FontWeightBold,
+				winplatform.FontWeightRegular,
 				subtitleColor,
 			)
 		}

@@ -333,7 +333,9 @@ func (o *winOverlay) DrawRecursiveGrid(
 			vpBounds,
 			fontName,
 			fontSize,
-			winplatform.FontWeightBold,
+			// Regular, like macOS: the pointer glyph is drawn with the plain
+			// system font there, and a bold ● reads as a larger dot.
+			winplatform.FontWeightRegular,
 			badge.ParseHexARGB(virtualPointer.FillColor),
 		)
 	}
