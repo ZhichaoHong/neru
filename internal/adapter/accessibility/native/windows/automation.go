@@ -76,6 +76,7 @@ const (
 
 	// IUIAutomation.
 	vtElementFromHandle   = 6
+	vtGetRawViewWalker    = 16
 	vtCreateTrueCondition = 21
 
 	// IUIAutomationElement.
@@ -88,6 +89,10 @@ const (
 	// IUIAutomationElementArray.
 	vtArrayGetLength  = 3
 	vtArrayGetElement = 4
+
+	// IUIAutomationTreeWalker.
+	vtWalkerGetFirstChild  = 4
+	vtWalkerGetNextSibling = 6
 )
 
 // UI Automation control-type names referenced from more than one place.
@@ -235,6 +240,19 @@ func enumerateClickableElements(hwnd uintptr, keptRoles map[string]struct{}) []w
 	}
 	defer comCall(automation, vtRelease)
 
+	// The raw view walker reaches the parts of a composite control that the
+	// control view hides. Losing it is not fatal: those controls fall back to the
+	// single wrapper element they reported before.
+	var walker unsafe.Pointer
+
+	if failed(comCall(automation, vtGetRawViewWalker, uintptr(unsafe.Pointer(&walker)))) {
+		walker = nil
+	}
+
+	if walker != nil {
+		defer comCall(walker, vtRelease)
+	}
+
 	var root unsafe.Pointer
 
 	hresult = comCall(
@@ -270,7 +288,7 @@ func enumerateClickableElements(hwnd uintptr, keptRoles map[string]struct{}) []w
 	}
 	defer comCall(array, vtRelease)
 
-	return collectArray(array, keptRoles)
+	return collectArray(array, walker, keptRoles)
 }
 
 // createAutomation creates the default IUIAutomation instance.
@@ -293,7 +311,14 @@ func createAutomation() unsafe.Pointer {
 
 // collectArray walks an IUIAutomationElementArray and extracts the clickable
 // controls. Each element is released as soon as its data is copied out.
-func collectArray(array unsafe.Pointer, keptRoles map[string]struct{}) []winElement {
+//
+// A composite control contributes its hidden parts instead of itself, so the
+// caller never sees both: two badges on one control is worse than a badly placed
+// one, and the wrapper is the badly placed one.
+func collectArray(
+	array, walker unsafe.Pointer,
+	keptRoles map[string]struct{},
+) []winElement {
 	var length int32
 
 	hresult := comCall(array, vtArrayGetLength, uintptr(unsafe.Pointer(&length)))
@@ -313,9 +338,18 @@ func collectArray(array unsafe.Pointer, keptRoles map[string]struct{}) []winElem
 
 		extracted, ok := extractWinElement(element, keptRoles)
 
+		var parts []winElement
+
+		if _, composite := compositeRoles[extracted.role]; ok && composite {
+			parts = hiddenParts(walker, element, keptRoles)
+		}
+
 		comCall(element, vtRelease)
 
-		if ok {
+		switch {
+		case len(parts) > 0:
+			result = append(result, parts...)
+		case ok:
 			result = append(result, extracted)
 		}
 	}
