@@ -254,11 +254,13 @@ func x11ScrollAtCursor(deltaX, deltaY int, modifiers action.Modifiers) error {
 		xClicks := min(scrollNotches(deltaX), maxClicks)
 
 		for range xClicks {
-			const mouseButtonHorizontalScrollRight = 7
-			button := C.uint(mouseButtonHorizontalScrollRight)
+			// Positive deltaX scrolls left, which is button 6; button 7 is the
+			// rotation to the right (scroll_service.go owns the convention).
+			const mouseButtonHorizontalScrollLeft = 6
+			button := C.uint(mouseButtonHorizontalScrollLeft)
 
 			if deltaX < 0 {
-				button = 6
+				button = 7
 			}
 
 			if C.neru_ax_button(display, button, 1) == 0 ||
@@ -331,7 +333,9 @@ func (s *x11ScrollSession) inject(deltaX, deltaY float64) error {
 		return err
 	}
 
-	return s.clickAxis(deltaX, x11ScrollRight, x11ScrollLeft)
+	// Left first: a positive deltaX scrolls left, the same convention the
+	// unanimated path above follows.
+	return s.clickAxis(deltaX, x11ScrollLeft, x11ScrollRight)
 }
 
 // clickAxis emits one chunk as whole wheel clicks. The animator only ever hands
