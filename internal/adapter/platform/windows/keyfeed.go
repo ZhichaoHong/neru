@@ -17,7 +17,8 @@ import (
 const (
 	// mapvkVkToVsc is MapVirtualKey's MAPVK_VK_TO_VSC mode: virtual key to
 	// scan code. Applications that read the scan code rather than the virtual
-	// key (games, some terminals) see nothing without it.
+	// key (games, some terminals) see nothing without it, and ToUnicode wants
+	// it alongside the VK.
 	mapvkVkToVsc = 0
 
 	// VkKeyScan reports the modifiers a character needs on the active layout
