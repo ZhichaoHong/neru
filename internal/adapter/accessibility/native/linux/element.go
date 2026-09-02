@@ -518,6 +518,13 @@ func scrollAtCursorNow(deltaX, deltaY int, modifiers action.Modifiers) error {
 				value = -1
 			}
 
+			// REL_HWHEEL counts a rotation to the right as positive, while a
+			// positive deltaX means left here, so axis 1 inverts. REL_WHEEL
+			// already counts up as positive, like the caller's deltaY.
+			if axis == 1 {
+				value = -value
+			}
+
 			for remainingNotches > 0 {
 				batch = append(batch, value)
 				remainingNotches--

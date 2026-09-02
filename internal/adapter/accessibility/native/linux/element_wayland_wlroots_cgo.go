@@ -369,7 +369,10 @@ func (s *waylandScrollSession) inject(deltaX, deltaY float64) error {
 	}
 
 	if deltaX != 0 {
-		return linux.WaylandScrollContinuous(1, deltaX)
+		// Wayland counts a scroll to the right as positive, the application
+		// convention counts left. Same negation as the vertical axis, for the
+		// same reason.
+		return linux.WaylandScrollContinuous(1, -deltaX)
 	}
 
 	return nil
@@ -390,20 +393,15 @@ func (s *waylandScrollSession) close() {
 // the compositor socket.
 //
 // Wayland axis convention: positive = scroll down (axis 0) / right (axis 1).
-// Application  convention: positive delta = scroll up (axis 0) / right (axis 1).
-// Vertical axis sign is negated to convert between the two.
+// Application  convention: positive delta = scroll up (axis 0) / left (axis 1).
+// Both axes are negated to convert between the two.
 func wlrootsScrollAxis(axis int, delta int) error {
 	totalNotches := abs(delta) / wlrootsScrollScale
 	if totalNotches == 0 {
 		totalNotches = 1
 	}
 
-	negate := axis == 0
-
-	step := wlrootsScrollStep
-	if negate {
-		step = -step
-	}
+	step := -wlrootsScrollStep
 
 	disc := 1
 	if delta < 0 {

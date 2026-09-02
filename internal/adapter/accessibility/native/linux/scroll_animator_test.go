@@ -200,7 +200,7 @@ func TestScrollAnimator_Animate_TravelsTheWholeDistance(t *testing.T) {
 
 	t.Cleanup(animator.stop)
 
-	// Both axes at once: a scroll_right bound alongside a scroll_down has to
+	// Both axes at once: a scroll_left bound alongside a scroll_down has to
 	// arrive as one diagonal animation, not as one axis lost to the other.
 	animator.animate(120, -500, 0, 8, 40, 0.1)
 
