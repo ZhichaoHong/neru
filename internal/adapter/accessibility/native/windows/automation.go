@@ -401,7 +401,7 @@ func extractWinElement(element unsafe.Pointer, keptRoles map[string]struct{}) (w
 	return winElement{
 		bounds:    bounds,
 		role:      role,
-		name:      currentName(element),
+		name:      usableName(currentName(element)),
 		clickable: true,
 	}, true
 }
