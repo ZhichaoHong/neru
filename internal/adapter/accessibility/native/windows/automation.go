@@ -76,6 +76,7 @@ const (
 
 	// IUIAutomation.
 	vtElementFromHandle       = 6
+	vtGetRawViewWalker        = 16
 	vtGetControlViewCondition = 18
 	vtCreateCacheRequest      = 20
 
@@ -96,6 +97,12 @@ const (
 	// IUIAutomationElementArray.
 	vtArrayGetLength  = 3
 	vtArrayGetElement = 4
+
+	// IUIAutomationTreeWalker. The cache-building variants are what the
+	// composite descent navigates with: an element handed back by the plain ones
+	// carries no cache, and every property read here is a cached one.
+	vtWalkerGetFirstChildBuildCache  = 10
+	vtWalkerGetNextSiblingBuildCache = 12
 )
 
 // UIA property ids the cache request prefetches (UIA_*PropertyId).
@@ -106,10 +113,12 @@ const (
 	propIsOffscreen       = 30022
 )
 
-// AutomationElementMode_None: cached elements carry only the requested
-// properties and no live reference back to the provider, which is all the
-// walk needs since every value is copied out before the array is released.
-const automationElementModeNone = 0
+// AutomationElementMode_Full: cached elements keep a live reference back to the
+// provider alongside the requested properties. The bulk of the walk needs no
+// such reference - every value is copied out before the array is released - but
+// a composite control is navigated from (see hiddenParts), and UIA refuses
+// navigation from an element cached with AutomationElementMode_None.
+const automationElementModeFull = 1
 
 // UI Automation control-type names referenced from more than one place.
 const (
@@ -248,6 +257,19 @@ func enumerateClickableElements(hwnd uintptr, keptRoles map[string]struct{}) []w
 	}
 	defer comCall(automation, vtRelease)
 
+	// The raw view walker reaches the parts of a composite control that the
+	// control view hides. Losing it is not fatal: those controls fall back to the
+	// single wrapper element they reported before.
+	var walker unsafe.Pointer
+
+	if failed(comCall(automation, vtGetRawViewWalker, uintptr(unsafe.Pointer(&walker)))) {
+		walker = nil
+	}
+
+	if walker != nil {
+		defer comCall(walker, vtRelease)
+	}
+
 	var root unsafe.Pointer
 
 	hresult = comCall(
@@ -293,7 +315,7 @@ func enumerateClickableElements(hwnd uintptr, keptRoles map[string]struct{}) []w
 	}
 	defer comCall(array, vtRelease)
 
-	return collectArray(array, keptRoles)
+	return collectArray(array, walker, cache, keptRoles)
 }
 
 // createCacheRequest builds the cache request FindAllBuildCache fills: the
@@ -316,7 +338,7 @@ func createCacheRequest(automation unsafe.Pointer, filter unsafe.Pointer) unsafe
 	}
 
 	if failed(comCall(cache, vtCachePutTreeFilter, uintptr(filter))) ||
-		failed(comCall(cache, vtCachePutAutomationElementMode, automationElementModeNone)) {
+		failed(comCall(cache, vtCachePutAutomationElementMode, automationElementModeFull)) {
 		comCall(cache, vtRelease)
 
 		return nil
@@ -345,7 +367,14 @@ func createAutomation() unsafe.Pointer {
 
 // collectArray walks an IUIAutomationElementArray and extracts the clickable
 // controls. Each element is released as soon as its data is copied out.
-func collectArray(array unsafe.Pointer, keptRoles map[string]struct{}) []winElement {
+//
+// A composite control contributes its hidden parts instead of itself, so the
+// caller never sees both: two badges on one control is worse than a badly placed
+// one, and the wrapper is the badly placed one.
+func collectArray(
+	array, walker, cache unsafe.Pointer,
+	keptRoles map[string]struct{},
+) []winElement {
 	var length int32
 
 	hresult := comCall(array, vtArrayGetLength, uintptr(unsafe.Pointer(&length)))
@@ -363,11 +392,20 @@ func collectArray(array unsafe.Pointer, keptRoles map[string]struct{}) []winElem
 			continue
 		}
 
-		extracted, ok := extractWinElement(element, keptRoles)
+		extracted, kept := extractWinElement(element, keptRoles)
+
+		var parts []winElement
+
+		if _, composite := compositeRoles[extracted.role]; kept && composite {
+			parts = hiddenParts(walker, element, cache, keptRoles)
+		}
 
 		comCall(element, vtRelease)
 
-		if ok {
+		switch {
+		case len(parts) > 0:
+			result = append(result, parts...)
+		case kept:
 			result = append(result, extracted)
 		}
 	}
