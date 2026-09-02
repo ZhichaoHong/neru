@@ -29,7 +29,38 @@ func TestCompositeRolesAreEnumeratedByDefault(t *testing.T) {
 func TestHiddenPartsWithoutAWalker(t *testing.T) {
 	t.Parallel()
 
-	if parts := hiddenParts(nil, nil, nil, defaultClickableRoles); parts != nil {
+	if parts := hiddenParts(nil, nil, nil, "New Tab", defaultClickableRoles); parts != nil {
 		t.Fatalf("hiddenParts without a walker returned %v, want nil", parts)
+	}
+}
+
+// TestSearchableName fixes what counts as a name a user can search for. The
+// Segoe MDL2 case is the one that matters: a non-empty name that looks present in
+// every debug dump and matches nothing a keyboard can send.
+func TestSearchableName(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]struct {
+		name string
+		want bool
+	}{
+		"plain":               {name: "New Tab", want: true},
+		"empty":               {name: "", want: false},
+		"whitespace":          {name: " \t ", want: false},
+		"newline only":        {name: "\n", want: false},
+		"segoe glyph":         {name: "", want: false},
+		"glyph beside a word": {name: " Close", want: true},
+		"non latin":           {name: "新しいタブ", want: true},
+		"punctuation":         {name: "+", want: true},
+	}
+
+	for label, testCase := range cases {
+		t.Run(label, func(t *testing.T) {
+			t.Parallel()
+
+			if got := searchableName(testCase.name); got != testCase.want {
+				t.Errorf("searchableName(%q) = %v, want %v", testCase.name, got, testCase.want)
+			}
+		})
 	}
 }

@@ -2,7 +2,10 @@
 
 package windows
 
-import "unsafe"
+import (
+	"unicode"
+	"unsafe"
+)
 
 // Controls whose actionable parts UI Automation hides from the control view.
 //
@@ -22,8 +25,32 @@ var compositeRoles = map[string]struct{}{
 	uiaControlSplitButton: {},
 }
 
+// searchableName reports whether a name gives the user something to type.
+//
+// Both the live hints filter and --filter-text match on the title, so a name made
+// only of characters a keyboard cannot produce is not a label, it is a dead search
+// key. Icon fonts are how that happens: WinUI puts the Segoe MDL2 codepoint in the
+// name, so Terminal's new-tab button announces itself as U+E710 and no query
+// reaches it.
+func searchableName(name string) bool {
+	for _, char := range name {
+		if unicode.IsGraphic(char) &&
+			!unicode.IsSpace(char) &&
+			!unicode.Is(unicode.Co, char) {
+			return true
+		}
+	}
+
+	return false
+}
+
 // hiddenParts returns the wrapper's immediate raw-view children that qualify as
 // hint targets in their own right.
+//
+// A part with no typeable name of its own inherits wrapperName. Splitting the
+// wrapper into parts otherwise trades a misplaced badge for an unsearchable one:
+// Terminal's SplitButton is named "New Tab" and its primary half is named with the
+// glyph, so the name worth searching for lives on the element being discarded.
 //
 // An empty result means the caller keeps the wrapper. A provider that publishes
 // no parts, or whose parts the role filter rejects, still deserves a badge -
@@ -37,11 +64,14 @@ var compositeRoles = map[string]struct{}{
 // rather than costing a round trip each.
 func hiddenParts(
 	walker, wrapper, cache unsafe.Pointer,
+	wrapperName string,
 	keptRoles map[string]struct{},
 ) []winElement {
 	if walker == nil || wrapper == nil || cache == nil {
 		return nil
 	}
+
+	inheritable := searchableName(wrapperName)
 
 	var child unsafe.Pointer
 
@@ -61,6 +91,10 @@ func hiddenParts(
 	for child != nil {
 		extracted, ok := extractWinElement(child, keptRoles)
 		if ok {
+			if inheritable && !searchableName(extracted.name) {
+				extracted.name = wrapperName
+			}
+
 			parts = append(parts, extracted)
 		}
 
