@@ -223,6 +223,13 @@ func keyboardHookProc(code int, wParam uintptr, lParam unsafe.Pointer) uintptr {
 
 	isUp := wParam == wmKeyUp || wParam == wmSysKeyUp || kbd.flags&llkhfUp != 0
 
+	// A modifier release is worth reporting whether or not the mode does
+	// anything with the key: a drag this process started may be waiting on it
+	// to decide whether to press that modifier back when the button goes up.
+	if isUp {
+		noteModifierReleased(kbd.vkCode)
+	}
+
 	key := hookKeyName(kbd.vkCode, isUp)
 	if key != "" && current.callback(key, isUp) {
 		return 1

@@ -5,6 +5,7 @@ package windows
 import (
 	"testing"
 
+	"github.com/y3owk1n/neru/internal/adapter/platform/modifierstate"
 	"github.com/y3owk1n/neru/internal/domain/action"
 )
 
@@ -45,6 +46,40 @@ func TestWindowsModifierKeysCoversEveryModifier(t *testing.T) {
 		if got := canonical[modifier]; got != 1 {
 			t.Errorf("%v has %d canonical keys, want exactly 1", modifier, got)
 		}
+	}
+}
+
+// TestNoteModifierReleased_DropsTheRestoreForTheKeyTheUserReleased covers the
+// keyboard-driven drag: the chord that presses the button holds Shift, the keys
+// that steer the drag cannot be typed until Shift is let go of, and the release
+// that ends the drag must not press it back.
+//
+// This one drives the package's drag stash directly rather than through
+// resumeModifierHold, which would inject real key events on a miss.
+func TestNoteModifierReleased_DropsTheRestoreForTheKeyTheUserReleased(t *testing.T) {
+	modifierHold{plan: modifierstate.Plan{Suppress: []modifierstate.Edit{
+		{Keycode: uint32(vkLShift), Modifier: action.ModShift},
+		{Keycode: uint32(vkLControl), Modifier: action.ModCtrl},
+	}}}.keepForRelease(action.ButtonLeft)
+
+	t.Cleanup(func() { _, _ = dragModifiers.Take(uint32(action.ButtonLeft)) })
+
+	noteModifierReleased(uint32(vkLShift))
+
+	// 'A' stands in for the steering keys: every one of them reports a release
+	// through the same hook, and none of them may disturb the plan.
+	noteModifierReleased(0x41)
+
+	plan, held := dragModifiers.Take(uint32(action.ButtonLeft))
+	if !held {
+		t.Fatal("the drag lost its plan, so its release has nothing to undo")
+	}
+
+	if len(plan.Suppress) != 1 || plan.Suppress[0].Keycode != uint32(vkLControl) {
+		t.Fatalf(
+			"the release would press back %v, want only the ctrl key %#x the user still holds",
+			plan.Suppress, vkLControl,
+		)
 	}
 }
 

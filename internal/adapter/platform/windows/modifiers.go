@@ -106,12 +106,46 @@ func (h modifierHold) release() {
 // returns would make a shift+drag an unmodified one from the first pixel of
 // movement.
 //
-// That stretches the tradeoff the hold already carries — a suppressed key the
-// user lets go of mid-drag is pressed back at the end and reads as held until
-// they press and release it once more — over a window as long as the drag.
-// Restoring stays the safer bias for the same reason it is inside one
-// injection.
+// That would stretch the tradeoff the hold already carries — a suppressed key
+// the user lets go of mid-drag is pressed back at the end and reads as held
+// until they press and release it once more — over a window as long as the drag,
+// which for a keyboard-driven drag is every drag: the chord that presses the
+// button has to be let go of before the keys that steer it can be typed. So the
+// keyboard hook tells the stash about those releases as they happen
+// (noteModifierReleased), and the end of the drag presses back only what the
+// user still has hold of.
 var dragModifiers modifierstate.Stash
+
+// noteModifierReleased records that the user let go of a modifier key
+// themselves, so the drag it was suppressed for does not press it back.
+//
+// Only the keyboard hook can see this. Once holdModifiers has released a
+// suppressed key, the live keyboard reads it up whether the user is still
+// holding it or not, so the release of the drag cannot tell the two apart and
+// biases towards restoring. A key event says which it was.
+//
+// Non-modifier keys are dropped here rather than at the call site: the hook
+// reports every key, and which ones present a modifier on Windows is this file's
+// to know.
+func noteModifierReleased(virtualKey uint32) {
+	if !isModifierVirtualKey(virtualKey) {
+		return
+	}
+
+	dragModifiers.ForgetKey(virtualKey)
+}
+
+// isModifierVirtualKey reports whether virtualKey is one of the keys Windows
+// reads as a modifier.
+func isModifierVirtualKey(virtualKey uint32) bool {
+	for _, key := range windowsModifierKeys {
+		if uint32(key.virtualKey) == virtualKey {
+			return true
+		}
+	}
+
+	return false
+}
 
 // keepForRelease keeps this hold for the release of button to pick up, instead
 // of undoing it when the call that took it returns.

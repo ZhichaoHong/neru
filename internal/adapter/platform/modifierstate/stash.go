@@ -64,6 +64,43 @@ func (s *Stash) Take(button uint32) (Plan, bool) {
 	return plan, true
 }
 
+// ForgetKey drops keycode from every plan waiting on its release, for a key the
+// user has since let go of themselves.
+//
+// A suppressed key is pressed back when the drag ends, because by then the live
+// keyboard reads the same whether the user is still holding the key or Neru
+// released it on their behalf — so the release has to guess, and it guesses that
+// the user still holds it. A real release seen while the drag is in flight is
+// the bit that guess is missing: the key was theirs, they are done with it, and
+// pressing it back would leave it held with nothing to let go of it.
+//
+// The plan itself stays, empty halves and all: the release still has to know a
+// press stashed something, or it decides the drag's modifiers a second time.
+func (s *Stash) ForgetKey(keycode uint32) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for button, plan := range s.plans {
+		s.plans[button] = Plan{
+			Suppress: withoutKey(plan.Suppress, keycode),
+			Press:    plan.Press,
+		}
+	}
+}
+
+// withoutKey returns edits without any naming keycode, leaving the original
+// alone: a merged plan shares its backing array with the plans it was folded
+// from.
+func withoutKey(edits []Edit, keycode uint32) []Edit {
+	if !namesKey(edits, keycode) {
+		return edits
+	}
+
+	return slices.DeleteFunc(slices.Clone(edits), func(edit Edit) bool {
+		return edit.Keycode == keycode
+	})
+}
+
 // mergedWith folds a later plan into this one, keeping every edit that still
 // needs undoing and dropping the ones the two plans cancel between them.
 func (p Plan) mergedWith(next Plan) Plan {
