@@ -47,9 +47,10 @@ func monitorSelectFontOr(value, fallback int) float64 {
 
 // monitorSelectPanelLayout computes, in global pixels, the panel rect centered
 // on the monitor, the label and subtitle text rects, and the corner radius.
-// It is the Linux layout at scale 1: the layered windows here are placed in
-// the physical pixels EnumDisplayMonitors reports, so there is no factor to
-// apply. Padding and radius honor the same "auto" (-1) config sentinels.
+// It is the Linux layout with the monitor's own scale: the windows here are
+// placed in the physical pixels EnumDisplayMonitors reports, so a size meant to
+// look the same on every monitor has a factor to apply. Padding and radius honor
+// the same "auto" (-1) config sentinels.
 func monitorSelectPanelLayout(
 	monitor image.Rectangle,
 	label, subtitle string,
@@ -212,7 +213,7 @@ func (m *Manager) DrawMonitorSelect(
 				subtitleRect,
 				style.SubtitleFontFamily,
 				subtitleFont,
-				winplatform.FontWeightBold,
+				winplatform.FontWeightRegular,
 				subtitleText,
 			)
 		}

@@ -411,7 +411,9 @@ func (m *Manager) DrawHintSearchInput(
 		bounds,
 		style.FontFamily(),
 		fontSize,
-		winplatform.FontWeightBold,
+		// Regular, not bold: macOS draws this badge with the plain system
+		// font (_searchInputFont) while hint labels are the bold one.
+		winplatform.FontWeightRegular,
 		badge.ParseHexARGB(style.TextColor()),
 	)
 

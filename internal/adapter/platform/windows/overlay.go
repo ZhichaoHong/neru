@@ -761,9 +761,9 @@ func (o *OverlayWindow) DrawPointerGlyph(
 		image.Rect(center.X-halfSize, center.Y-halfSize, center.X+halfSize, center.Y+halfSize),
 		fontFamily,
 		float64(size),
-		// A stand-in for the cursor sits over arbitrary content, so it reads
-		// like a badge rather than like a cell label.
-		FontWeightBold,
+		// Regular, like macOS, which draws the pointer glyph with the plain
+		// system font: a bold ● reads as a larger dot, not as the same pointer.
+		FontWeightRegular,
 		color,
 	)
 }
