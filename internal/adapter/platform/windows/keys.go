@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"syscall"
 	"unicode"
+	"unsafe"
 )
 
 // Virtual-key parsing and key-name normalization for Windows input hooks.
@@ -58,6 +60,24 @@ const (
 	// layout. The high bit of the result flags a dead key.
 	mapvkVkToChar = 2
 
+	// mapvkVkToVsc is MapVirtualKey's MAPVK_VK_TO_VSC mode: virtual-key code to
+	// scan code, which ToUnicode wants alongside the VK.
+	mapvkVkToVsc = 0
+
+	// toUnicodeNoKernelState is ToUnicode's wFlags bit 2: translate without
+	// touching the calling thread's kernel keyboard state. Asking what a key
+	// types must not consume a dead key the user is halfway through composing.
+	toUnicodeNoKernelState = 0x4
+
+	// keyStateSize is the length of the modifier-state array ToUnicode reads,
+	// indexed by virtual-key code; keyStateDown is what marks one held.
+	keyStateSize = 256
+	keyStateDown = 0x80
+
+	// toUnicodeBufferSize bounds the characters one keystroke can type. Two
+	// covers every layout Windows ships, so this has room to spare.
+	toUnicodeBufferSize = 8
+
 	// loWordMask isolates the low 16 bits; byteMask isolates the low 8 bits.
 	loWordMask = 0xFFFF
 	byteMask   = 0xFF
@@ -73,6 +93,7 @@ var (
 	procGetAsyncKeyState = user32.NewProc("GetAsyncKeyState")
 	procMapVirtualKeyW   = user32.NewProc("MapVirtualKeyW")
 	procVkKeyScanW       = user32.NewProc("VkKeyScanW")
+	procToUnicode        = user32.NewProc("ToUnicode")
 )
 
 var (
@@ -230,6 +251,77 @@ func charNameFromVirtualKey(vk uint32) string {
 	}
 
 	return string(keyChar)
+}
+
+// TextForKeyCombo returns the text a Neru key combo types on the active
+// keyboard layout, and whether it types any.
+//
+// The key stream names a keystroke, not the character it produces, and the two
+// only coincide on a US layout: "shift+1" is ! there and " on a German one, and
+// the name alone does not say which. Windows knows, through the same layout the
+// hook named the key with, so anything reading the key stream as text asks here
+// instead of guessing.
+//
+// A combo carrying cmd is never text, and neither is ctrl or alt on its own -
+// those are bindings, and ctrl would translate to a control character. The two
+// together are AltGr, which types the third level of a non-US layout (AltGr+q
+// is @ on German), so that one answers. Keys that type nothing - Escape, F1, a
+// dead key still waiting for its base character - report false.
+func TextForKeyCombo(name string) (string, bool) {
+	mods, virtualKey, err := ParseHotkeyString(name)
+	if err != nil {
+		return "", false
+	}
+
+	if mods&modWin != 0 {
+		return "", false
+	}
+
+	// AltGr arrives as ctrl+alt together; either one alone is a binding.
+	if (mods&modControl != 0) != (mods&modAlt != 0) {
+		return "", false
+	}
+
+	var keyState [keyStateSize]byte
+	if mods&modShift != 0 {
+		keyState[vkShift] = keyStateDown
+	}
+
+	if mods&modControl != 0 {
+		keyState[vkControl] = keyStateDown
+		keyState[vkMenu] = keyStateDown
+	}
+
+	scanCode, _, _ := procMapVirtualKeyW.Call(uintptr(virtualKey), mapvkVkToVsc)
+
+	var buffer [toUnicodeBufferSize]uint16
+
+	ret, _, _ := procToUnicode.Call(
+		uintptr(virtualKey),
+		scanCode,
+		uintptr(unsafe.Pointer(&keyState[0])),
+		uintptr(unsafe.Pointer(&buffer[0])),
+		uintptr(len(buffer)),
+		toUnicodeNoKernelState,
+	)
+
+	// 0 is "this key types nothing" and -1 is a dead key, which types nothing on
+	// its own either.
+	count := int32(ret)
+	if count <= 0 || count > int32(len(buffer)) {
+		return "", false
+	}
+
+	text := syscall.UTF16ToString(buffer[:count])
+	for _, char := range text {
+		// Control characters are what a key types when it is not text at all:
+		// Escape gives 0x1B, Return 0x0D. A search box takes neither.
+		if !unicode.IsPrint(char) {
+			return "", false
+		}
+	}
+
+	return text, true
 }
 
 // virtualKeyFromChar resolves a single character to its virtual-key code on the

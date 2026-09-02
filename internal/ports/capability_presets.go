@@ -181,9 +181,17 @@ func WindowsCapabilities() PlatformCapabilities {
 			"dark mode detection available via the Windows personalization registry " +
 				"(Themes\\Personalize AppsUseLightTheme)",
 		),
+		// Still a stub, because the *field* is what this row is about and Windows
+		// has none. What it does have is layout translation on the fallback path:
+		// the hook resolves what each keystroke types through the active layout,
+		// so a shifted character reaches the query even where the key name cannot
+		// name it. A dead key and an input method still do not, which is the part
+		// only a real field would buy.
 		TextInput: stubCapability(
-			"native hint-search field not implemented yet; hint search falls back " +
-				"to the event tap's key stream",
+			"no native hint-search field: the query is read from the event tap's " +
+				"key stream, translated through the active keyboard layout, so " +
+				"shifted characters reach it but dead keys and IME composition " +
+				"do not",
 		),
 		// Static, deliberately, exactly as the Linux entry above is: whether this
 		// machine has OCR language data installed is a runtime fact, and probing

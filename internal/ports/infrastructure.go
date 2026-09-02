@@ -50,6 +50,22 @@ type EventTapPort interface {
 	Destroy()
 }
 
+// KeyTextResolver is an optional EventTapPort extension: the text a key event
+// types on the active keyboard layout. Anything that reads the key stream as
+// text needs it, because the stream names the keystroke rather than the
+// character it produces - and which character that is the key name cannot say.
+// "shift+1" is ! on a US layout and " on a German one, so only the backend that
+// owns the layout can answer.
+//
+// The second result is false whenever this backend cannot: the key types nothing
+// (Escape, F1, a dead key waiting for its base), the combo is a binding rather
+// than text, or the backend has no layout translation at all. Callers fall back
+// to reading the key name themselves, which reaches the letters and no more.
+type KeyTextResolver interface {
+	// TextForKey returns the text the key combo types, and whether it types any.
+	TextForKey(key string) (string, bool)
+}
+
 // OverlayKeyboardPassthroughReporter is an optional EventTapPort extension:
 // whether an indicator overlay may drop exclusive keyboard capture so scroll
 // reaches the focused app. Only the event tap can answer it — it needs a

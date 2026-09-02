@@ -243,6 +243,21 @@ func (a *Adapter) AllowsOverlayKeyboardPassthrough() bool {
 	return overlayKeyboardPassthroughAllowed()
 }
 
+// TextForKey returns the text a key combo types on the active keyboard layout,
+// and whether it types any.
+//
+// Hint search is the caller: off macOS there is no native text field, so the
+// query is assembled from the key stream - which names keystrokes ("shift+1"),
+// not the characters they produce. Only the layout says which character that is.
+//
+// Like SetKeyboardLayout this takes no lock and carries no destroyed guard: it
+// is a question about the layout, answered without the tap handle, so a
+// shutdown has nothing to keep out. Backends without layout translation report
+// false and the caller falls back to reading the key name.
+func (a *Adapter) TextForKey(key string) (string, bool) {
+	return textForKey(key)
+}
+
 // claimTeardown settles who is tearing the tap down and marks the adapter
 // destroyed and disabled in the same hold.
 //
@@ -265,8 +280,9 @@ func (a *Adapter) claimTeardown() (chan struct{}, bool) {
 }
 
 // Ensure Adapter implements ports.EventTapPort and the optional overlay
-// passthrough extension.
+// passthrough and key-text extensions.
 var (
 	_ ports.EventTapPort                       = (*Adapter)(nil)
 	_ ports.OverlayKeyboardPassthroughReporter = (*Adapter)(nil)
+	_ ports.KeyTextResolver                    = (*Adapter)(nil)
 )

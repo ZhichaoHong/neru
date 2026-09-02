@@ -271,11 +271,18 @@ nothing else. From two notches up (`scroll_step_half`, `scroll_step_full`, or a
 `scroll_step` above 60) the same eased curve applies as everywhere else, and
 those are the scrolls the animation is worth having for.
 
-⁵ This row is about the native *field* — a platform text control that owns
+⁵ This row is about the native *field* - a platform text control that owns
 keyboard focus and brings the system's input method with it. Only macOS has
-one. Everywhere else the query is read from the event tap's key stream, which
-is why dead keys and IME composition do not work there and a hint search takes
-plain characters.
+one. Everywhere else the query is read from the event tap's key stream, which is
+why dead keys and IME composition do not work there.
+
+**What that costs differs by backend, because the key stream names keystrokes
+rather than characters.** `shift+1` is `!` on a US layout and `"` on a German
+one, and the name alone does not say which. Windows resolves it - the hook asks
+the active layout what the keystroke types (`ToUnicode`), so shifted characters
+and AltGr's third level both reach the query. Linux has no such translation yet
+(X11 would need `XkbLookupKeySym`, evdev `xkbcommon`), so hint search there
+takes letters, digits and unshifted punctuation, and drops the rest.
 
 **What the box on screen is, is a different question, and every platform draws
 one.** Linux paints the search badge onto the shared overlay surface with the

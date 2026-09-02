@@ -255,3 +255,44 @@ func TestAdapter_Destroy_StopsLaterCallsFromReachingTheTap(t *testing.T) {
 		t.Fatalf("tap reached %d times, want 1 (the teardown itself)", got)
 	}
 }
+
+// TestAdapter_TextForKey_RefusesNonText pins the part of the key-text contract
+// that holds on every backend, including the ones that answer nothing: a combo
+// carrying cmd is never text, and neither is a key that types nothing. Which
+// character an ordinary key types is a layout fact, so the backend that resolves
+// it pins that itself.
+func TestAdapter_TextForKey_RefusesNonText(t *testing.T) {
+	t.Parallel()
+
+	adapter := eventtap.NewAdapter(newFakeTap(), nil)
+
+	for _, key := range []string{"cmd+c", "Escape", "F1", "shift", ""} {
+		if text, ok := adapter.TextForKey(key); ok {
+			t.Errorf("TextForKey(%q) = %q true, want false", key, text)
+		}
+	}
+}
+
+// TestAdapter_TextForKey_SurvivesDestroy pins that the answer does not depend on
+// the tap: it is a question about the keyboard layout, so a torn-down adapter
+// answers it rather than deadlocking on a teardown or reaching a freed handle.
+func TestAdapter_TextForKey_SurvivesDestroy(t *testing.T) {
+	t.Parallel()
+
+	adapter := eventtap.NewAdapter(newFakeTap(), nil)
+	adapter.Destroy()
+
+	done := make(chan struct{})
+
+	go func() {
+		defer close(done)
+
+		adapter.TextForKey("c")
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(blockedCallTimeout):
+		t.Fatal("TextForKey blocked after Destroy")
+	}
+}

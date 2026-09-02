@@ -179,6 +179,66 @@ func TestOEMPunctuationRoundTripLayoutAware(t *testing.T) {
 	}
 }
 
+// TestTextForKeyComboRefusesNonText pins what is never text, which holds on
+// every keyboard layout: a binding, a key that types nothing, and the sentinel
+// strings the tap uses for sticky modifiers.
+func TestTextForKeyComboRefusesNonText(t *testing.T) {
+	t.Parallel()
+
+	for _, name := range []string{
+		"ctrl+c",                // a binding, and a control character besides
+		"alt+c",                 // a menu accelerator
+		"cmd+c",                 // never text
+		"ctrl+shift+g",          // still a binding with shift added
+		"Escape",                // types 0x1B
+		"Return",                // types 0x0D
+		"F1",                    // types nothing
+		"Left",                  // types nothing
+		"shift",                 // a modifier on its own
+		"__modifier_shift_down", // the tap's sticky-modifier sentinel
+		"",                      // not a key at all
+	} {
+		if text, ok := TextForKeyCombo(name); ok {
+			t.Errorf("TextForKeyCombo(%q) = %q true, want false", name, text)
+		}
+	}
+}
+
+// TestTextForKeyComboTypesCharacters pins that ordinary keys answer, without
+// naming the characters: which character a key types is exactly the
+// layout-dependent fact this function exists to resolve, so the assertions are
+// on shape. The shifted letter is checked against its own unshifted answer,
+// which holds on any layout with an upper case.
+func TestTextForKeyComboTypesCharacters(t *testing.T) {
+	t.Parallel()
+
+	lower, ok := TextForKeyCombo("c")
+	if !ok {
+		t.Fatalf(`TextForKeyCombo("c") = false, want the character it types`)
+	}
+
+	upper, ok := TextForKeyCombo("shift+c")
+	if !ok {
+		t.Fatalf(`TextForKeyCombo("shift+c") = false, want the character it types`)
+	}
+
+	if upper != strings.ToUpper(lower) {
+		t.Fatalf("shift+c typed %q, want the upper case of %q", upper, lower)
+	}
+
+	// A digit row key is where the layouts diverge: shift+1 is ! on US and " on
+	// German. Either way it must type something, and something other than the
+	// digit - which is the whole defect this resolves.
+	shiftedDigit, ok := TextForKeyCombo("shift+1")
+	if !ok {
+		t.Fatalf(`TextForKeyCombo("shift+1") = false, want the character it types`)
+	}
+
+	if shiftedDigit == "1" {
+		t.Fatalf(`TextForKeyCombo("shift+1") = "1", want the shifted character`)
+	}
+}
+
 func TestNameToVirtualKeyPunctuationResolves(t *testing.T) {
 	t.Parallel()
 
