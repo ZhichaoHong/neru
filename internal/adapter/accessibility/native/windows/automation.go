@@ -341,7 +341,7 @@ func collectArray(
 		var parts []winElement
 
 		if _, composite := compositeRoles[extracted.role]; ok && composite {
-			parts = hiddenParts(walker, element, keptRoles)
+			parts = hiddenParts(walker, element, extracted.name, keptRoles)
 		}
 
 		comCall(element, vtRelease)
