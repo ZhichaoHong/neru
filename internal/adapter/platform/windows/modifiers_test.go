@@ -108,6 +108,45 @@ func TestNoteModifierReleased_RecordsOnlyWhileAHoldIsOpen(t *testing.T) {
 	}
 }
 
+// TestNoteModifierReleased_DropsTheRestoreForTheKeyTheUserReleased covers the
+// keyboard-driven drag, which the tracking window above cannot: keepForRelease
+// closes that window, so a release seen mid-drag has to reach the stashed plan
+// instead. The chord that presses the button holds Shift, the keys that steer
+// the drag cannot be typed until Shift is let go of, and the release that ends
+// the drag must not press it back.
+//
+// This one drives the drag stash directly rather than through
+// resumeModifierHold, which would inject real key events on a miss.
+func TestNoteModifierReleased_DropsTheRestoreForTheKeyTheUserReleased(t *testing.T) {
+	modifierHoldMu.Lock()
+	beginReleaseTracking()
+
+	modifierHold{plan: modifierstate.Plan{Suppress: []modifierstate.Edit{
+		{Keycode: uint32(vkLShift), Modifier: action.ModShift},
+		{Keycode: uint32(vkLControl), Modifier: action.ModCtrl},
+	}}}.keepForRelease(action.ButtonLeft)
+
+	t.Cleanup(func() { _, _ = windowsDragModifiers.Take(uint32(action.ButtonLeft)) })
+
+	noteModifierReleased(uint32(vkLShift))
+
+	// 'A' stands in for the steering keys: every one of them reports a release
+	// through the same hook, and none of them may disturb the plan.
+	noteModifierReleased(0x41)
+
+	plan, held := windowsDragModifiers.Take(uint32(action.ButtonLeft))
+	if !held {
+		t.Fatal("the drag lost its plan, so its release has nothing to undo")
+	}
+
+	if len(plan.Suppress) != 1 || plan.Suppress[0].Keycode != uint32(vkLControl) {
+		t.Fatalf(
+			"the release would press back %v, want only the ctrl key %#x the user still holds",
+			plan.Suppress, vkLControl,
+		)
+	}
+}
+
 // A drag is two calls with the user's movement in between, so the hold the
 // press took has to reach the release intact: the same plan, with the lock and
 // the release record reopened for it, and let go of in between so a scroll
@@ -129,7 +168,11 @@ func TestModifierHold_KeepForRelease_HandsThePlanToTheMatchingRelease(t *testing
 
 	modifierHoldMu.Unlock()
 
-	noteModifierReleased(vkLControl)
+	// Alt, which this plan says nothing about, because what is under test here
+	// is that the tracking window is shut rather than what a release does to the
+	// plan: a release of a key the plan suppresses is dropped from it, which
+	// TestNoteModifierReleased_DropsTheRestoreForTheKeyTheUserReleased covers.
+	noteModifierReleased(vkLMenu)
 
 	if released := endReleaseTracking(); released != nil {
 		t.Fatalf("release tracking stayed open across the drag: %v", released)
