@@ -160,7 +160,7 @@ func TestLabelAutohideRulePinReportsARuleItCannotRead(t *testing.T) {
 		source string
 	}{
 		{
-			name:   "the method renamed",
+			name:   nativeRuleRenamedCase,
 			source: "- (void)drawGridCaption:(NSString *)label {\n\treturn;\n}\n",
 		},
 		{
@@ -210,8 +210,8 @@ var labelAutohideOperands = map[string]func(labelAutohideInputs) float64{
 		return inputs.multiplier
 	},
 	"self.gridFont.pointSize": func(inputs labelAutohideInputs) float64 { return inputs.fontSize },
-	"cellRect.size.width":     func(inputs labelAutohideInputs) float64 { return inputs.cellWidth },
-	"cellRect.size.height":    func(inputs labelAutohideInputs) float64 { return inputs.cellHeight },
+	nativeRuleCellWidth:       func(inputs labelAutohideInputs) float64 { return inputs.cellWidth },
+	nativeRuleCellHeight:      func(inputs labelAutohideInputs) float64 { return inputs.cellHeight },
 }
 
 // labelAutohideCase is one question put to both implementations of the rule.

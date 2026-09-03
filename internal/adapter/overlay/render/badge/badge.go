@@ -78,6 +78,55 @@ func EstimateTextHeight(fontSize float64) int {
 	return int(math.Ceil(fontSize * textHeightMultiplier))
 }
 
+// FitFontSize is the largest size at or below fontSize whose estimated text box
+// fits inside cell, never going below minFontSize.
+//
+// Measured with the same two multipliers EstimateTextWidth and
+// EstimateTextHeight use, so a label sized here and a plate sized there cannot
+// disagree about how big the text is.
+//
+// scale is how much larger the drawn glyph will be than the returned size: the
+// GDI and Cairo backends measure cells in device pixels but hand their draw
+// calls a logical font size that the backend then multiplies, and a fit that
+// ignores that clips the label by exactly the monitor scale. A backend that
+// measures and draws in the same units passes 1; so does a non-positive value,
+// because a caller with no scale to report means the same thing.
+//
+// The floor is what keeps this from answering with a size no renderer can draw:
+// a cell can be one pixel, and a glyph scaled to fit it is a smudge. Callers
+// that would rather draw nothing than draw a smudge ask separately - the label
+// autohide rule is that question.
+func FitFontSize(
+	text string,
+	fontSize float64,
+	cell image.Rectangle,
+	minFontSize float64,
+	scale float64,
+) float64 {
+	runes := float64(len([]rune(text)))
+	if runes == 0 {
+		return fontSize
+	}
+
+	if scale <= 0 {
+		scale = 1
+	}
+
+	fitted := fontSize
+
+	widthLimit := float64(cell.Dx()) / (runes * textWidthMultiplier * scale)
+	if widthLimit < fitted {
+		fitted = widthLimit
+	}
+
+	heightLimit := float64(cell.Dy()) / (textHeightMultiplier * scale)
+	if heightLimit < fitted {
+		fitted = heightLimit
+	}
+
+	return max(fitted, minFontSize)
+}
+
 // Size returns the outer badge width and height for text at the given font
 // size, applying auto padding on both axes.
 func Size(text string, fontSize float64, paddingX, paddingY int) (int, int) {

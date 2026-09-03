@@ -2,6 +2,7 @@ package badge_test
 
 import (
 	"image"
+	"math"
 	"testing"
 
 	"github.com/y3owk1n/neru/internal/adapter/overlay/render/badge"
@@ -9,6 +10,14 @@ import (
 )
 
 const opaqueWhite = 0xFFFFFFFF
+
+// fitTolerance is how far a fitted font size may land from the expected one.
+//
+// The fit divides, so a size that is a whole number on paper - 21 / 1.4 = 15 -
+// comes back a few bits off it. Slack of a billionth of a point cannot be drawn
+// and cannot hide a real change, since every case here differs from its
+// neighbors by points.
+const fitTolerance = 1e-9
 
 func TestParseHexARGB_Notations(t *testing.T) {
 	t.Parallel()
@@ -161,6 +170,207 @@ func TestEstimateTextHeight_LineHeightHeuristic(t *testing.T) {
 				)
 			}
 		})
+	}
+}
+
+// TestFitFontSize_ShrinksToTheCellAndStops covers the size a shrink-to-fit
+// caller draws with. The one property worth stating outright: whatever comes
+// back, EstimateTextWidth and EstimateTextHeight of it fit the cell, unless the
+// floor stopped the shrinking - which is what
+// TestFitFontSize_MeasuresWithTheSameHeuristicsAsTheEstimators checks over a
+// range rather than case by case.
+func TestFitFontSize_ShrinksToTheCellAndStops(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		text     string
+		fontSize float64
+		cell     image.Rectangle
+		minSize  float64
+		want     float64
+	}{
+		{
+			name:     "a roomy cell keeps the configured size",
+			text:     "A",
+			fontSize: 20,
+			cell:     image.Rect(0, 0, 400, 400),
+			minSize:  6,
+			want:     20,
+		},
+		{
+			name:     "width binds",
+			text:     "A",
+			fontSize: 20,
+			cell:     image.Rect(0, 0, 7, 400),
+			minSize:  6,
+			want:     10, // 7 / (1 * 0.7)
+		},
+		{
+			name:     "height binds",
+			text:     "A",
+			fontSize: 20,
+			cell:     image.Rect(0, 0, 400, 21),
+			minSize:  6,
+			want:     15, // 21 / 1.4
+		},
+		{
+			name:     "the tighter of the two binds",
+			text:     "A",
+			fontSize: 20,
+			cell:     image.Rect(0, 0, 7, 21),
+			minSize:  6,
+			want:     10,
+		},
+		{
+			name:     "each rune costs width",
+			text:     "AB",
+			fontSize: 20,
+			cell:     image.Rect(0, 0, 14, 400),
+			minSize:  6,
+			want:     10, // 14 / (2 * 0.7)
+		},
+		{
+			name:     "the floor stops the shrinking",
+			text:     "A",
+			fontSize: 20,
+			cell:     image.Rect(0, 0, 400, 3),
+			minSize:  6,
+			want:     6,
+		},
+		{
+			name:     "a one-pixel cell lands on the floor",
+			text:     "A",
+			fontSize: 20,
+			cell:     image.Rect(0, 0, 1, 1),
+			minSize:  6,
+			want:     6,
+		},
+		{
+			name:     "an empty label has nothing to fit",
+			text:     "",
+			fontSize: 20,
+			cell:     image.Rect(0, 0, 1, 1),
+			minSize:  6,
+			want:     20,
+		},
+		{
+			name:     "an empty cell lands on the floor",
+			text:     "A",
+			fontSize: 20,
+			cell:     image.Rectangle{},
+			minSize:  6,
+			want:     6,
+		},
+		{
+			name:     "a zero floor shrinks without bound",
+			text:     "A",
+			fontSize: 20,
+			cell:     image.Rect(0, 0, 400, 7),
+			minSize:  0,
+			want:     5, // 7 / 1.4
+		},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := badge.FitFontSize(
+				testCase.text,
+				testCase.fontSize,
+				testCase.cell,
+				testCase.minSize,
+				1,
+			)
+			if math.Abs(got-testCase.want) > fitTolerance {
+				t.Errorf(
+					"FitFontSize(%q, %v, %v, %v, 1) = %v, want %v",
+					testCase.text, testCase.fontSize, testCase.cell, testCase.minSize,
+					got, testCase.want,
+				)
+			}
+		})
+	}
+}
+
+// TestFitFontSize_ScalesTheCellItMeasures covers the term the GDI and Cairo
+// backends need: they measure cells in device pixels and hand their draw calls a
+// logical size the backend multiplies by the monitor scale, so a fit that ignored
+// the scale would return a size that clips by exactly that factor.
+func TestFitFontSize_ScalesTheCellItMeasures(t *testing.T) {
+	t.Parallel()
+
+	// The same cell in device pixels at three monitor scales. At 2x the cell is
+	// worth half as many logical points, so the label has to come back half as
+	// large to occupy it.
+	cell := image.Rect(0, 0, 28, 400)
+
+	tests := []struct {
+		name  string
+		scale float64
+		want  float64
+	}{
+		{name: "unscaled", scale: 1, want: 40},
+		{name: "at 1.5x", scale: 1.5, want: 40.0 / 1.5},
+		{name: "at 2x", scale: 2, want: 20},
+		{name: "a non-positive scale reads as unscaled", scale: 0, want: 40},
+		{name: "a negative scale reads as unscaled", scale: -1, want: 40},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := badge.FitFontSize("A", 100, cell, 0, testCase.scale)
+			if math.Abs(got-testCase.want) > fitTolerance {
+				t.Errorf(
+					"FitFontSize(\"A\", 100, %v, 0, %v) = %v, want %v",
+					cell, testCase.scale, got, testCase.want,
+				)
+			}
+		})
+	}
+}
+
+// TestFitFontSize_MeasuresWithTheSameHeuristicsAsTheEstimators is the reason the
+// fit lives in this package at all: the size it answers with has to be one the
+// estimators agree fits, or a label and the plate drawn behind it disagree about
+// how big the text is.
+//
+// A rounding allowance of one pixel per axis is deliberate. The estimators
+// ceil - they answer in whole pixels a renderer can use - while the fit works in
+// points, so a size that fits exactly comes back estimated one pixel over.
+func TestFitFontSize_MeasuresWithTheSameHeuristicsAsTheEstimators(t *testing.T) {
+	t.Parallel()
+
+	const configured = 40
+
+	for _, text := range []string{"A", "AB", "ABC"} {
+		for width := 1; width <= 60; width++ {
+			for height := 1; height <= 60; height++ {
+				cell := image.Rect(0, 0, width, height)
+				fitted := badge.FitFontSize(text, configured, cell, 0, 1)
+
+				if estimated := badge.EstimateTextWidth(text, fitted); estimated > width+1 {
+					t.Fatalf(
+						"FitFontSize(%q, %d, %v, 0, 1) = %v, whose estimated width %d does not fit",
+						text, configured, cell, fitted, estimated,
+					)
+				}
+
+				if estimated := badge.EstimateTextHeight(fitted); estimated > height+1 {
+					t.Fatalf(
+						"FitFontSize(%q, %d, %v, 0, 1) = %v, whose estimated height %d does not fit",
+						text,
+						configured,
+						cell,
+						fitted,
+						estimated,
+					)
+				}
+			}
+		}
 	}
 }
 

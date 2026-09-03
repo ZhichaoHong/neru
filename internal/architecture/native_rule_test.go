@@ -27,6 +27,15 @@ import (
 // readNativeSource in native_constants_test.go is the entry point that reads
 // the file; this is what a pin does with what it read.
 
+// The vocabulary more than one pin spells the same way: two operand names every
+// rule reading a cell binds, and the table entry each pin uses to prove a rename
+// is caught. Shared so a respelling is one edit rather than three pins drifting.
+const (
+	nativeRuleCellWidth   = "cellRect.size.width"
+	nativeRuleCellHeight  = "cellRect.size.height"
+	nativeRuleRenamedCase = "the method renamed"
+)
+
 // nativeRuleComparisonOperators is the alternation every comparison in a native
 // rule is read with; the longer spellings come first so `<=` is never read as
 // `<`.

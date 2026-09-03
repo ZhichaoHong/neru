@@ -54,6 +54,9 @@
 //     on what they put on the wire.
 //   - label_autohide_rule_test.go — the label autohide rule is pinned across
 //     that same boundary, by running the native copy.
+//   - label_fit_rule_test.go - the recursive-grid label fit, the rule that
+//     shrinks a label to the cell it lands in, is pinned across that same
+//     boundary the same way.
 //   - layering_test.go — domain stays pure, infra does not import app, and app
 //     reaches infra only through ports.
 //   - mode_extension_switch_test.go — behavior only some modes have is an

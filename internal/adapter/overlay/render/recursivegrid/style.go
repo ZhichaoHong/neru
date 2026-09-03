@@ -10,6 +10,12 @@ import (
 
 const (
 	minLineWidth = 1
+
+	// minLabelFontSize is the size LabelFontSizeIn will not shrink a label past.
+	// Below this a glyph stops being a character and becomes a mark, and the
+	// label has to fit inside a cell that is itself only a few pixels, so the
+	// honest answer at that point is to hide it rather than to keep scaling.
+	minLabelFontSize = 6
 )
 
 // Style is the resolved visual styling for the recursive-grid overlay.
@@ -268,8 +274,36 @@ func BuildStyle(cfg config.RecursiveGridConfig, theme config.ThemeProvider) Styl
 // stays visible.
 func (s Style) LineWidthF() float64 { return float64(max(s.lineWidth, minLineWidth)) }
 
-// LabelFontSize returns the label font size as a float.
+// LabelFontSize returns the configured label font size as a float. It is the
+// size a cell large enough for it gets; LabelFontSizeIn is what a backend draws
+// with.
 func (s Style) LabelFontSize() float64 { return float64(s.fontSize) }
+
+// LabelFontSizeIn is the size to draw a cell's label at: the configured size,
+// shrunk until the label fits the cell, floored at minLabelFontSize.
+//
+// Recursive grid subdivides without bound, so one fixed size truncates the
+// moment a layer is smaller than its own text. That is what a user sees on the
+// deepest layer after turning label_autohide_multiplier off to get labels back
+// at all: the glyphs are there and clipped. Grid mode answers the same problem
+// in its subgrid with a flat 0.7 scale, which works because that grid is exactly
+// one level deep; unbounded depth needs the cell measured instead.
+//
+// scale is the monitor scale the backend will multiply the returned size by
+// before drawing, since cell arrives in the same device pixels the backend fills
+// with. Pass 1 from a backend that measures and draws in one unit.
+//
+// Deliberately independent of the autohide rule. This one says how big the label
+// is, ShowLabelIn says whether it is worth drawing, and folding them together
+// makes the threshold self-referential - a smaller fitted size lowers the
+// threshold it is being tested against.
+//
+// The Cairo and GDI backends both call this. macOS copies it in Objective-C for
+// the reason ShowLabelIn is copied there, and
+// internal/architecture/label_fit_rule_test.go holds that copy to this one.
+func (s Style) LabelFontSizeIn(label string, cell image.Rectangle, scale float64) float64 {
+	return badge.FitFontSize(label, s.LabelFontSize(), cell, minLabelFontSize, scale)
+}
 
 // SubKeyPreviewFontSizeF returns the preview font size as a float, clamped to
 // stay renderable.
