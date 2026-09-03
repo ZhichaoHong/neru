@@ -328,7 +328,7 @@ func (o *winOverlay) paintRecursiveGrid(
 				label = string(keyRunes[idx])
 			}
 
-			if style.ShowLabelIn(cell) {
+			if style.ShowLabelIn(cell, 1) {
 				if style.LabelBackground() {
 					o.drawRecursiveLabelBackground(label, cell, style)
 				}

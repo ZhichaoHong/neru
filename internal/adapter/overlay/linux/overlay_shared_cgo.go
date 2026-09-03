@@ -1218,7 +1218,7 @@ func (o *sharedOverlay) drawFrame(
 				label = string(keyRunes[idx])
 			}
 
-			if style.ShowLabelIn(cell) {
+			if style.ShowLabelIn(cell, o.srf.surfaceScale()) {
 				if style.LabelBackground() {
 					o.drawLabelBackground(label, cell, style)
 				}

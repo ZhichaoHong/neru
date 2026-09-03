@@ -3,6 +3,7 @@ package architecture_test
 import (
 	"fmt"
 	"image"
+	"maps"
 	"regexp"
 	"strconv"
 	"strings"
@@ -46,8 +47,9 @@ func TestLabelAutohideRuleIsPinnedAcrossTheLanguageBoundary(t *testing.T) {
 	t.Parallel()
 
 	rule := readNativeLabelAutohideRule(t)
+	constants := objcFloatConstants(t, labelAutohideNativeSource)
 
-	for _, disagreement := range labelAutohideDisagreements(rule) {
+	for _, disagreement := range labelAutohideDisagreements(rule, constants) {
 		t.Errorf(
 			"%s: %s and %s disagree on %s\n\t%s draws the label: %t\n\t%s draws it: %t\n\tthe rule read from %s is: %s",
 			labelAutohideNativeSource,
@@ -79,6 +81,7 @@ func TestLabelAutohideRulePinCatchesNativeDrift(t *testing.T) {
 	t.Parallel()
 
 	rule := readNativeLabelAutohideRule(t)
+	constants := objcFloatConstants(t, labelAutohideNativeSource)
 
 	drifted := []struct {
 		name  string
@@ -103,9 +106,15 @@ func TestLabelAutohideRulePinCatchesNativeDrift(t *testing.T) {
 			},
 		},
 		{
-			name: "the threshold taken from the font size alone",
+			name: "the threshold taken from the fit floor alone",
 			apply: func(rule nativeLabelAutohideRule) nativeLabelAutohideRule {
 				return rule.withThresholdFactor(1, "1")
+			},
+		},
+		{
+			name: "the threshold anchored to the configured font size again",
+			apply: func(rule nativeLabelAutohideRule) nativeLabelAutohideRule {
+				return rule.withThresholdFactor(0, "self.gridFont.pointSize")
 			},
 		},
 		{
@@ -131,7 +140,7 @@ func TestLabelAutohideRulePinCatchesNativeDrift(t *testing.T) {
 	for _, drift := range drifted {
 		mutant := drift.apply(rule)
 
-		if len(labelAutohideDisagreements(mutant)) == 0 {
+		if len(labelAutohideDisagreements(mutant, constants)) == 0 {
 			t.Errorf(
 				"no case tells %s apart from %s: %s would pass the pin\n\tthe drifted rule is: %s",
 				drift.name, labelAutohideGoDeclaration, labelAutohideNativeSource, mutant,
@@ -202,9 +211,14 @@ type labelAutohideInputs struct {
 }
 
 // labelAutohideOperands binds every name the Objective-C rule is allowed to
-// mention to the input it stands for. It is the pin's vocabulary: a rule
-// reading anything else is one this test cannot evaluate, and parsing says so
-// rather than guessing a value.
+// mention to the input it stands for. It is the pin's vocabulary, alongside the
+// kGridLabel* constants read out of the same source: a rule reading anything
+// else is one this test cannot evaluate, and parsing says so rather than
+// guessing a value.
+//
+// The configured font size stays in the vocabulary although the rule no longer
+// measures against it. That is the anchor this rule used to have, and one drift
+// case puts it back to prove the pin notices.
 var labelAutohideOperands = map[string]func(labelAutohideInputs) float64{
 	"self.gridLabelAutohideMultiplier": func(inputs labelAutohideInputs) float64 {
 		return inputs.multiplier
@@ -266,6 +280,12 @@ type labelAutohideDisagreement struct {
 // multipliers above 1 agrees everywhere else.
 // TestLabelAutohideRulePinCatchesNativeDrift is what keeps this list honest.
 //
+// The cell sizes are small because the threshold is: it is a multiple of the fit
+// floor, six points, and not of the configured font size. One case is written
+// from the report that moved the anchor there, a 5x5 grid two levels deep on a
+// 4K screen whose 30x17 cells an 18 pt label cleared on neither axis, and it
+// is what tells a rule measuring the configured size again apart from this one.
+//
 // One part of the rule no case here can reach: with a cell size and a font size
 // both non-negative, dropping the multiplier guard entirely answers exactly as
 // the guard does, on every input either implementation can be handed. That half
@@ -291,22 +311,22 @@ func labelAutohideCases() []labelAutohideCase {
 			name:       "a cell exactly on the threshold",
 			fontSize:   20,
 			multiplier: 1.5,
-			cellWidth:  30,
-			cellHeight: 30,
+			cellWidth:  9,
+			cellHeight: 9,
 		},
 		{
 			name:       "a cell one pixel under on width",
 			fontSize:   20,
 			multiplier: 1.5,
-			cellWidth:  29,
-			cellHeight: 30,
+			cellWidth:  8,
+			cellHeight: 9,
 		},
 		{
 			name:       "a cell one pixel under on height",
 			fontSize:   20,
 			multiplier: 1.5,
-			cellWidth:  30,
-			cellHeight: 29,
+			cellWidth:  9,
+			cellHeight: 8,
 		},
 		{
 			name:       "a cell under on both dimensions",
@@ -322,21 +342,28 @@ func labelAutohideCases() []labelAutohideCase {
 			cellWidth:  400,
 			cellHeight: 400,
 		},
-		{name: "a wide, short cell", fontSize: 10, multiplier: 2, cellWidth: 400, cellHeight: 19},
-		{name: "a tall, narrow cell", fontSize: 10, multiplier: 2, cellWidth: 19, cellHeight: 400},
+		{
+			name:       "a cell smaller than the configured label, which shrinks to fit it",
+			fontSize:   18,
+			multiplier: 1.5,
+			cellWidth:  30,
+			cellHeight: 17,
+		},
+		{name: "a wide, short cell", fontSize: 10, multiplier: 2, cellWidth: 400, cellHeight: 11},
+		{name: "a tall, narrow cell", fontSize: 10, multiplier: 2, cellWidth: 11, cellHeight: 400},
 		{
 			name:       "a threshold falling between two pixels, cell under it",
 			fontSize:   10,
 			multiplier: 1.55,
-			cellWidth:  15,
-			cellHeight: 16,
+			cellWidth:  9,
+			cellHeight: 10,
 		},
 		{
 			name:       "a threshold falling between two pixels, cell over it",
 			fontSize:   10,
 			multiplier: 1.55,
-			cellWidth:  16,
-			cellHeight: 16,
+			cellWidth:  10,
+			cellHeight: 10,
 		},
 		{
 			name:       "a multiplier no cell on screen clears",
@@ -349,15 +376,15 @@ func labelAutohideCases() []labelAutohideCase {
 			name:       "a multiplier below 1, cell under the threshold it sets",
 			fontSize:   20,
 			multiplier: 0.5,
-			cellWidth:  8,
-			cellHeight: 8,
+			cellWidth:  2,
+			cellHeight: 2,
 		},
 		{
 			name:       "a multiplier below 1, cell over the threshold it sets",
 			fontSize:   20,
 			multiplier: 0.5,
-			cellWidth:  12,
-			cellHeight: 12,
+			cellWidth:  4,
+			cellHeight: 4,
 		},
 	}
 }
@@ -365,7 +392,10 @@ func labelAutohideCases() []labelAutohideCase {
 // labelAutohideDisagreements runs every case through the native rule and
 // through the shared Go implementation, and returns the cases they answer
 // differently.
-func labelAutohideDisagreements(rule nativeLabelAutohideRule) []labelAutohideDisagreement {
+func labelAutohideDisagreements(
+	rule nativeLabelAutohideRule,
+	constants map[string]float64,
+) []labelAutohideDisagreement {
 	var disagreements []labelAutohideDisagreement
 
 	for _, testCase := range labelAutohideCases() {
@@ -374,9 +404,15 @@ func labelAutohideDisagreements(rule nativeLabelAutohideRule) []labelAutohideDis
 			LabelAutohideMultiplier: testCase.multiplier,
 		})
 
-		shared := style.ShowLabelIn(image.Rect(0, 0, testCase.cellWidth, testCase.cellHeight))
+		// Scale 1: AppKit measures the cell and sizes the label in the same
+		// points, so the copy being pinned has no scale term to read. What the
+		// GDI and Cairo backends pass is covered where they are tested.
+		shared := style.ShowLabelIn(
+			image.Rect(0, 0, testCase.cellWidth, testCase.cellHeight),
+			1,
+		)
 
-		native := rule.showsLabel(testCase.inputs())
+		native := rule.showsLabel(testCase.inputs(), constants)
 		if native == shared {
 			continue
 		}
@@ -432,11 +468,20 @@ func (rule nativeLabelAutohideRule) String() string {
 
 // showsLabel answers the question the shared implementation answers: is this
 // cell big enough for its label to be drawn?
-func (rule nativeLabelAutohideRule) showsLabel(inputs labelAutohideInputs) bool {
-	values := make(map[string]float64, len(labelAutohideOperands)+1)
+//
+// constants are the file-scope CGFloat values declared beside the rule, read out
+// of the same source rather than restated here, so a constant edited on its own
+// still moves what this pin evaluates.
+func (rule nativeLabelAutohideRule) showsLabel(
+	inputs labelAutohideInputs,
+	constants map[string]float64,
+) bool {
+	values := make(map[string]float64, len(labelAutohideOperands)+len(constants)+1)
 	for name, read := range labelAutohideOperands {
 		values[name] = read(inputs)
 	}
+
+	maps.Copy(values, constants)
 
 	if !rule.guard.holds(values) {
 		return true
@@ -647,13 +692,20 @@ func validateNativeLabelAutohideRule(rule nativeLabelAutohideRule) string {
 			continue
 		}
 
+		// Any kGridLabel* constant, rather than a list of the ones the rule
+		// happens to name today: they are read out of the same file the rule is,
+		// so one added there is already valued by the time it gets here.
+		if strings.HasPrefix(token, "kGridLabel") {
+			continue
+		}
+
 		_, parseErr := strconv.ParseFloat(token, 64)
 		if parseErr == nil {
 			continue
 		}
 
 		return fmt.Sprintf(
-			"the rule reads %s, which this pin cannot value; it knows %s, the threshold it declares, and numeric literals",
+			"the rule reads %s, which this pin cannot value; it knows %s, the kGridLabel* constants, the threshold it declares, and numeric literals",
 			token,
 			strings.Join(sortedNativeRuleOperands(labelAutohideOperands), ", "),
 		)

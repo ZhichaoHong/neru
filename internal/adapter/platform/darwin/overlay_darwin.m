@@ -1625,14 +1625,17 @@ typedef NS_ENUM(NSInteger, HintPlacement) {
 	}
 
 	// Skip main label when cells are too small to render legibly.
-	// Each cell must be at least (multiplier × font size) in both dimensions.
+	// Each cell must be at least (multiplier × the fit floor) in both dimensions.
 	// A multiplier of 0 disables autohide.
+	// The floor rather than the configured size because a recursive-grid label is
+	// shrunk to its cell and stops there, so the floor is the smallest label that
+	// will ever be drawn and the only size worth asking a cell to hold.
 	// This is the same rule as recursivegrid.Style.ShowLabelIn, which the Linux
 	// and Windows recursive-grid overlays call; the pin is
 	// internal/architecture/label_autohide_rule_test.go, and it reads this
 	// guard by its shape, so a rewrite fails it even when the behaviour holds.
 	if (self.gridLabelAutohideMultiplier > 0) {
-		CGFloat minCell = self.gridFont.pointSize * self.gridLabelAutohideMultiplier;
+		CGFloat minCell = kGridLabelMinFontSize * self.gridLabelAutohideMultiplier;
 		if (cellRect.size.width < minCell || cellRect.size.height < minCell)
 			return;
 	}
