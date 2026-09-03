@@ -42,14 +42,19 @@ const (
 
 	wheelDelta = 120
 
-	// scrollPixelsPerNotch is how many pixels of a caller's delta make one
+	// ScrollPixelsPerNotch is how many pixels of a caller's delta make one
 	// wheel notch. The scroll service speaks in pixels (scroll_step = 50,
 	// scroll_step_half = 500, scroll_step_full = 1000000), macOS injects those
 	// pixels literally through kCGScrollEventUnitPixel, and the Linux twin of
 	// this constant lives in accessibility/native/linux/element.go. All three
 	// have to agree, or the same binding travels a different distance per
 	// platform.
-	scrollPixelsPerNotch = 30
+	//
+	// Exported because the UI Automation scroll path in
+	// accessibility/native/windows divides by it too: a ScrollPattern small
+	// increment is one line, which is what a notch approximates, so the two
+	// Windows routes have to read the same number to travel the same distance.
+	ScrollPixelsPerNotch = 30
 )
 
 // mouseInput and input mirror Win32 MOUSEINPUT/INPUT on 64-bit Windows (40 bytes).
@@ -309,7 +314,7 @@ func ScrollWheel(deltaX int, deltaY int, modifiers action.Modifiers) error {
 // Clamping means "as far as one wheel event reaches", which is at least the
 // direction the binding asked for.
 func wheelUnits(pixels int) uint32 {
-	units := int64(pixels) * wheelDelta / scrollPixelsPerNotch
+	units := int64(pixels) * wheelDelta / ScrollPixelsPerNotch
 
 	return uint32(int32(min(max(units, math.MinInt16), math.MaxInt16)))
 }

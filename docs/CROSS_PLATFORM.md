@@ -658,9 +658,33 @@ the opposite of the shared convention and is negated in `ScrollWheel`
 window's decision everywhere: it arrives as `WM_MOUSEHWHEEL` on Windows and as
 wheel buttons 6/7 on X11, and an application that handles neither stays put.
 
+**The horizontal axis on Windows takes a second route first.** File Explorer's
+item view is the case that forced it: `WM_MOUSEHWHEEL` posted straight to that
+window moves it no further than an injected one does, and it does not honor
+shift-plus-vertical-wheel either, so `scroll_left` and `scroll_right` reached a
+control that scrolls fine vertically and refused to move sideways. The same
+control advertises a UI Automation `ScrollPattern` whose `Scroll` does move it, so
+`ScrollAtCursor` walks up from the element under the cursor to the nearest one
+reporting `HorizontallyScrollable`, and calls that
+(`accessibility/native/windows/scroll.go`). Where nothing advertises horizontal
+scrolling the wheel still goes out, unchanged. Three consequences worth knowing:
+
+- The vertical axis is never routed this way. Every target handles
+  `WM_MOUSEWHEEL`, and the wheel carries a pixel delta rather than the line
+  granularity a `ScrollPattern` quantizes to.
+- A modified scroll is never routed this way either. `Scroll` carries no
+  modifier, so a `ctrl+scroll_left` meant to zoom would arrive as a plain scroll -
+  worse than not scrolling, because it does the wrong thing rather than nothing.
+- The granularity is the provider's, not the caller's. One increment is one line,
+  so a pixel delta is divided by the same `ScrollPixelsPerNotch` the wheel path
+  uses and issued that many times. Chromium coalesces increments sent back to
+  back, so a delta much larger than one increment travels less far there than the
+  wheel would have carried it; the shipped `scroll_step` of 50 pixels is one
+  increment, where there is nothing to coalesce.
+
 **Units:** a caller's delta is in pixels. macOS injects those pixels literally
 through `kCGScrollEventUnitPixel`; Windows and Linux each divide by their own
-copy of `scrollPixelsPerNotch` (30) before sending wheel units, so the same
+copy of `ScrollPixelsPerNotch` (30) before sending wheel units, so the same
 binding travels roughly the same distance on all three. The two constants have to
 stay equal. On Windows the converted value is then clamped to a signed short,
 which is all `WM_MOUSEWHEEL` carries: `scroll_step_full` is 1000000 pixels and
