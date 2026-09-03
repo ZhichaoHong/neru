@@ -96,8 +96,13 @@ func TestBuildStyle_CarriesTheToggles(t *testing.T) {
 }
 
 // TestStyle_ShowLabelIn pins the label autohide threshold every backend draws
-// by: label_autohide_multiplier x the label font size, compared against both
-// cell dimensions, with a non-positive multiplier meaning "always show".
+// by: label_autohide_multiplier x minLabelFontSize x the monitor scale, compared
+// against both cell dimensions, with a non-positive multiplier meaning "always
+// show".
+//
+// The floor and not the configured font size, because LabelFontSizeIn shrinks a
+// label to its cell: the configured size says nothing about whether a label will
+// fit, so measuring it hid labels the fit had already made fit.
 //
 // The Cairo and GDI backends both call this, so the cases run in every job
 // rather than only where a particular backend is built.
@@ -107,6 +112,7 @@ func TestStyle_ShowLabelIn(t *testing.T) {
 		cell       image.Rectangle
 		fontSize   int
 		multiplier float64
+		scale      float64
 		want       bool
 	}{
 		{
@@ -114,6 +120,7 @@ func TestStyle_ShowLabelIn(t *testing.T) {
 			cell:       image.Rect(0, 0, 1, 1),
 			fontSize:   100,
 			multiplier: 0,
+			scale:      1,
 			want:       true,
 		},
 		{
@@ -121,48 +128,90 @@ func TestStyle_ShowLabelIn(t *testing.T) {
 			cell:       image.Rect(0, 0, 1, 1),
 			fontSize:   100,
 			multiplier: -2,
+			scale:      1,
 			want:       true,
 		},
 		{
 			name:       "cell clears the threshold on both axes",
 			cell:       image.Rect(0, 0, 30, 30),
 			fontSize:   10,
-			multiplier: 2, // threshold 20
+			multiplier: 2, // threshold 12
+			scale:      1,
 			want:       true,
 		},
 		{
 			name:       "cell exactly on the threshold shows",
-			cell:       image.Rect(0, 0, 20, 20),
+			cell:       image.Rect(0, 0, 12, 12),
 			fontSize:   10,
-			multiplier: 2, // threshold 20
+			multiplier: 2, // threshold 12
+			scale:      1,
 			want:       true,
 		},
 		{
 			name:       "cell below the threshold hides",
-			cell:       image.Rect(0, 0, 30, 30),
+			cell:       image.Rect(0, 0, 8, 8),
 			fontSize:   20,
-			multiplier: 2, // threshold 40
+			multiplier: 2, // threshold 12
+			scale:      1,
 			want:       false,
 		},
 		{
 			name:       "narrow cell hides even when tall enough",
-			cell:       image.Rect(0, 0, 19, 100),
+			cell:       image.Rect(0, 0, 11, 100),
 			fontSize:   10,
-			multiplier: 2, // threshold 20
+			multiplier: 2, // threshold 12
+			scale:      1,
 			want:       false,
 		},
 		{
 			name:       "short cell hides even when wide enough",
-			cell:       image.Rect(0, 0, 100, 19),
+			cell:       image.Rect(0, 0, 100, 11),
 			fontSize:   10,
-			multiplier: 2, // threshold 20
+			multiplier: 2, // threshold 12
+			scale:      1,
 			want:       false,
 		},
 		{
 			name:       "offset cell is measured by its size, not its position",
 			cell:       image.Rect(500, 700, 530, 730),
 			fontSize:   10,
-			multiplier: 2, // threshold 20
+			multiplier: 2, // threshold 12
+			scale:      1,
+			want:       true,
+		},
+		{
+			// The report that moved the anchor to the floor: a 5x5 grid two
+			// levels deep on a 4K screen, whose cells an 18 pt label clears on
+			// neither axis even though it draws at 8 pt there and fills them.
+			name:       "a configured size the cell cannot hold does not hide the label",
+			cell:       image.Rect(0, 0, 30, 17),
+			fontSize:   18,
+			multiplier: 1.5, // threshold 9, not 27
+			scale:      1,
+			want:       true,
+		},
+		{
+			name:       "the scale raises the threshold, since the cell arrives scaled",
+			cell:       image.Rect(0, 0, 10, 10),
+			fontSize:   10,
+			multiplier: 1.5, // threshold 18
+			scale:      2,
+			want:       false,
+		},
+		{
+			name:       "the same cell clears the unscaled threshold",
+			cell:       image.Rect(0, 0, 10, 10),
+			fontSize:   10,
+			multiplier: 1.5, // threshold 9
+			scale:      1,
+			want:       true,
+		},
+		{
+			name:       "a non-positive scale is read as 1",
+			cell:       image.Rect(0, 0, 10, 10),
+			fontSize:   10,
+			multiplier: 1.5, // threshold 9
+			scale:      0,
 			want:       true,
 		},
 	}
@@ -174,8 +223,12 @@ func TestStyle_ShowLabelIn(t *testing.T) {
 				LabelAutohideMultiplier: testCase.multiplier,
 			})
 
-			if got := style.ShowLabelIn(testCase.cell); got != testCase.want {
-				t.Errorf("ShowLabelIn(%v) = %v, want %v", testCase.cell, got, testCase.want)
+			got := style.ShowLabelIn(testCase.cell, testCase.scale)
+			if got != testCase.want {
+				t.Errorf(
+					"ShowLabelIn(%v, %v) = %v, want %v",
+					testCase.cell, testCase.scale, got, testCase.want,
+				)
 			}
 		})
 	}
@@ -272,10 +325,10 @@ func TestStyle_LabelFontSizeIn(t *testing.T) {
 	}
 }
 
-// TestStyle_LabelFontSizeInNeverExceedsTheConfiguredSize is the property the
-// autohide threshold depends on: ShowLabelIn measures a cell against the
-// configured size, so a fit that could return something larger would draw labels
-// bigger than the rule that admitted them was told about.
+// TestStyle_LabelFontSizeInNeverExceedsTheConfiguredSize pins the direction the
+// fit runs in. font_size is what the user asked for, and the fit exists to give
+// that up when a cell cannot hold it — never to hand back something larger
+// because a cell had room to spare.
 func TestStyle_LabelFontSizeInNeverExceedsTheConfiguredSize(t *testing.T) {
 	style := NewStyle(StyleOptions{FontSize: 10})
 

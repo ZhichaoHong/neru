@@ -282,7 +282,7 @@ func (o *winOverlay) DrawRecursiveGrid(
 				label = string(keyRunes[idx])
 			}
 
-			if style.ShowLabelIn(cell) {
+			if style.ShowLabelIn(cell, o.scale()) {
 				if style.LabelBackground() {
 					o.drawRecursiveLabelBackground(label, cell, style)
 				}
