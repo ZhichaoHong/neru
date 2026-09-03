@@ -513,6 +513,32 @@ posts `MOUSEEVENTF_HWHEEL` for the horizontal component with the sign flipped,
 because Win32 reads a positive horizontal notch as right where the others read
 it as left.
 
+**The horizontal axis on Windows takes a second route first.** File Explorer's
+item view is the case that forced it: `WM_MOUSEHWHEEL` moves that window no
+further posted directly than injected, and it does not honor
+shift-plus-vertical-wheel either, so `scroll_left` and `scroll_right` reached a
+control that scrolls fine vertically and refused to move sideways. The same
+control advertises a UI Automation `ScrollPattern` whose `Scroll` does move it,
+so `ScrollAtCursor` walks up from the element under the cursor to the nearest
+one reporting `HorizontallyScrollable` and calls that
+([scroll.go](../internal/adapter/accessibility/native/windows/scroll.go)). Where
+nothing advertises horizontal scrolling the wheel still goes out, unchanged.
+Three consequences worth knowing:
+
+- The vertical axis is never routed this way. Every target handles
+  `WM_MOUSEWHEEL`, and the wheel carries a pixel delta rather than the line
+  granularity a `ScrollPattern` quantizes to.
+- A modified scroll is never routed this way either. `Scroll` carries no
+  modifier, so a `ctrl+scroll_left` meant to zoom would arrive as a plain
+  scroll - worse than not scrolling, because it does the wrong thing rather
+  than nothing.
+- The granularity is the provider's, not the caller's. One increment is one
+  line, so a pixel delta is divided by the same `ScrollPixelsPerNotch` the
+  wheel path uses and issued that many times. Chromium coalesces increments
+  sent back to back, so a delta much larger than one increment travels less far
+  there than the wheel would have carried it; the shipped `scroll_step` of 50
+  pixels is one increment, where there is nothing to coalesce.
+
 **Modifiers on a scroll** reach the primitive by two routes, because only one
 primitive has a field for them. macOS stamps `CGEventSetFlags` on the scroll
 event, always (the empty set included, since a NULL-source event inherits the
