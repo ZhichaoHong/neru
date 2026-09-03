@@ -1058,7 +1058,19 @@ What it costs you is names. A contour hint is geometry with no role and no title
 - **A low-contrast filled control may hint its label rather than its edge**, and one with neither text nor an icon may not be found at all.
 - **The focused window is all you get.** Contour never asks the accessibility tree, so unlike `vision` it does not keep the menubar, the dock or notification centre. That is the point of the strategy - it is for the windows a tree cannot answer for - but it means the system chrome carries no hints while it is active. With nothing focused it reads the whole screen instead.
 
-Budget roughly 100 to 160 ms of detection on a 4K frame, plus the capture. Like the other screen-reading strategies it needs the screen-recording permission, and per-app via `[[hints.app_configs]]` is the right shape - set it on the RDP client, leave everything else on `axtree`.
+Budget roughly 100 to 160 ms of detection on a 4K frame, plus the capture - so 200 to 300 ms of activation for a full-screen remote session, against the tree walk's low tens. Like the other screen-reading strategies it needs the screen-recording permission.
+
+**Per-app is the shape to reach for.** Contour is worth its cost on the handful of apps whose tree is useless and nowhere else, so name those apps and leave the global strategy alone:
+
+```toml
+[[hints.app_configs]]
+bundle_id = "mstsc.exe"
+strategy = "contour"
+```
+
+A `bundle_id` with no path separator matches the basename of whatever identity the platform reports, so `mstsc.exe` selects `C:\Windows\System32\mstsc.exe` without pinning an install path that a Windows update can move. The clients worth naming are `mstsc.exe` and Citrix Workspace's `wfica32.exe` on Windows, `com.microsoft.rdc.macos` on macOS, and on Linux whichever app id your compositor reports for the client - `org.remmina.Remmina` for Remmina.
+
+The override _replaces_ the strategy for that app rather than adding to it. So the client's own local chrome - its connection bar, its menus - is contoured along with the remote content instead of coming from the accessibility tree, and none of those hints is searchable or role-filterable. That is usually the right trade for a remote session, where the tree answers for the frame and nothing inside it, but it is a trade. Everything else keeps the global strategy and its cheap tree walk.
 
 Two platform limits, both documented rather than worked around. On macOS the capture is the main display only, so a window on a second monitor is refused with a message saying so rather than hinted from the wrong pixels. And on a HiDPI Linux output the detector measures in physical pixels against thresholds written in logical ones, which loses the smallest targets - reading a per-output scale factor needs compositor state the capture path does not carry. Inside an RDP or Citrix client the same mismatch is unfixable everywhere: those pixels arrive with the remote session's DPI and no local API can report it.
 
