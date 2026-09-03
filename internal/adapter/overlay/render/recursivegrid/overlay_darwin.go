@@ -376,7 +376,12 @@ func (o *Overlay) DrawRecursiveGrid(
 		drawSubKeyPreview: C.int(boolToInt(
 			style.PreviewsNextDepth(len(nextKeys), nextDims),
 		)),
-		labelAutohideMultiplier:  C.float(style.LabelAutohideMultiplier()),
+		labelAutohideMultiplier: C.float(style.LabelAutohideMultiplier()),
+		// Recursive grid subdivides without bound, so its labels are fit to the
+		// cell they land in - Style.LabelFontSizeIn is the same rule the Cairo and
+		// GDI backends call. Grid mode leaves this zero and draws at the
+		// configured size.
+		labelFitToCell:           1,
 		subKeyFontSize:           C.int(style.SubKeyPreviewFontSize()),
 		subKeyFontFamily:         (*C.char)(cachedStyle.SubKeyFontFamily),
 		subKeyAutohideMultiplier: C.float(style.SubKeyPreviewAutohideMultiplier()),

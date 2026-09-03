@@ -2,11 +2,17 @@ package recursivegrid
 
 import (
 	"image"
+	"math"
 	"testing"
 
 	"github.com/y3owk1n/neru/internal/adapter/overlay/render/badge"
 	"github.com/y3owk1n/neru/internal/config"
 )
+
+// labelFontSizeTolerance is how far a fitted size may land from the expected
+// one: the fit divides, so a size that is whole on paper comes back a few bits
+// off it.
+const labelFontSizeTolerance = 1e-9
 
 type mockThemeProvider struct {
 	darkMode bool
@@ -172,6 +178,118 @@ func TestStyle_ShowLabelIn(t *testing.T) {
 				t.Errorf("ShowLabelIn(%v) = %v, want %v", testCase.cell, got, testCase.want)
 			}
 		})
+	}
+}
+
+// TestStyle_LabelFontSizeIn pins the size every backend draws a cell's label at:
+// the configured size until the label stops fitting the cell, then whatever does
+// fit, and never below the floor.
+//
+// The case that started this: a 5x5 recursive grid two levels deep on a 1080p
+// screen leaves cells around 15x8, and a 10 pt label drawn in one of those is
+// clipped. Fitted, it comes back at about 6 pt and reads.
+func TestStyle_LabelFontSizeIn(t *testing.T) {
+	tests := []struct {
+		name     string
+		label    string
+		cell     image.Rectangle
+		fontSize int
+		scale    float64
+		want     float64
+	}{
+		{
+			name:     "a cell with room keeps the configured size",
+			label:    "A",
+			cell:     image.Rect(0, 0, 400, 400),
+			fontSize: 10,
+			scale:    1,
+			want:     10,
+		},
+		{
+			name:     "a short cell shrinks the label",
+			label:    "A",
+			cell:     image.Rect(0, 0, 400, 11),
+			fontSize: 10,
+			scale:    1,
+			want:     11 / 1.4,
+		},
+		{
+			name:     "a narrow cell shrinks the label",
+			label:    "A",
+			cell:     image.Rect(0, 0, 5, 400),
+			fontSize: 10,
+			scale:    1,
+			want:     5 / 0.7,
+		},
+		{
+			name:     "the deepest layer of a 5x5 grid on a 1080p screen",
+			label:    "A",
+			cell:     image.Rect(0, 0, 15, 8),
+			fontSize: 10,
+			scale:    1,
+			// 8 / 1.4 is 5.7, under the floor.
+			want: minLabelFontSize,
+		},
+		{
+			name:     "a cell too small for the floor gets the floor",
+			label:    "A",
+			cell:     image.Rect(0, 0, 3, 3),
+			fontSize: 10,
+			scale:    1,
+			want:     minLabelFontSize,
+		},
+		{
+			name:     "a scaled backend measures its device pixels as fewer points",
+			label:    "A",
+			cell:     image.Rect(0, 0, 400, 22),
+			fontSize: 100,
+			scale:    2,
+			want:     22 / 1.4 / 2,
+		},
+		{
+			name:     "an offset cell is measured by its size, not its position",
+			label:    "A",
+			cell:     image.Rect(500, 700, 515, 708),
+			fontSize: 10,
+			scale:    1,
+			// 8 / 1.4 is 5.7, under the floor.
+			want: minLabelFontSize,
+		},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			style := NewStyle(StyleOptions{FontSize: testCase.fontSize})
+
+			got := style.LabelFontSizeIn(testCase.label, testCase.cell, testCase.scale)
+			if math.Abs(got-testCase.want) > labelFontSizeTolerance {
+				t.Errorf(
+					"LabelFontSizeIn(%q, %v, %v) = %v, want %v",
+					testCase.label, testCase.cell, testCase.scale, got, testCase.want,
+				)
+			}
+		})
+	}
+}
+
+// TestStyle_LabelFontSizeInNeverExceedsTheConfiguredSize is the property the
+// autohide threshold depends on: ShowLabelIn measures a cell against the
+// configured size, so a fit that could return something larger would draw labels
+// bigger than the rule that admitted them was told about.
+func TestStyle_LabelFontSizeInNeverExceedsTheConfiguredSize(t *testing.T) {
+	style := NewStyle(StyleOptions{FontSize: 10})
+
+	for width := 1; width <= 200; width++ {
+		for height := 1; height <= 200; height++ {
+			cell := image.Rect(0, 0, width, height)
+
+			if got := style.LabelFontSizeIn("A", cell, 1); got > style.LabelFontSize() {
+				t.Fatalf(
+					"LabelFontSizeIn(\"A\", %v, 1) = %v, larger than the configured %v",
+					cell, got, style.LabelFontSize(),
+				)
+			}
+		}
 	}
 }
 

@@ -291,7 +291,7 @@ func (o *winOverlay) DrawRecursiveGrid(
 					label,
 					cell,
 					style.FontFamily(),
-					style.LabelFontSize(),
+					style.LabelFontSizeIn(label, cell, o.scale()),
 					winplatform.FontWeightRegular,
 					style.TextColorARGB(),
 				)
@@ -370,8 +370,10 @@ func (o *winOverlay) drawRecursiveLabelBackground(
 	style recursivegridcomponent.Style,
 ) {
 	// Scaled because the label drawn over this box goes through
-	// drawTextCentered, which scales the same font size.
-	fontSize := style.LabelFontSize() * o.scale()
+	// drawTextCentered, which scales the same font size. Fitted for the same
+	// reason: a plate sized for the configured font around a glyph shrunk to the
+	// cell is a plate the glyph rattles around in.
+	fontSize := style.LabelFontSizeIn(label, cell, o.scale()) * o.scale()
 	paddingX := badge.AutoPadding(fontSize, style.LabelBackgroundPaddingX(), true)
 	paddingY := badge.AutoPadding(fontSize, style.LabelBackgroundPaddingY(), false)
 	width := badge.EstimateTextWidth(label, fontSize) + paddingX*winPaddingMultiplier

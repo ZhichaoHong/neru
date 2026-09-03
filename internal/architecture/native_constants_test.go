@@ -40,6 +40,38 @@ func cHeaderIntConstants(t *testing.T, repoRelPath string) map[string]int64 {
 	return constants
 }
 
+// objcFloatConstantPattern matches a `static const CGFloat kName = 0.7;`
+// declaration, which is how the .m files spell a tuning value a pinned rule
+// reads.
+var objcFloatConstantPattern = regexp.MustCompile(
+	`(?m)^static const CGFloat[ \t]+([A-Za-z_][A-Za-z0-9_]*)[ \t]*=[ \t]*(-?[0-9]*\.?[0-9]+)[ \t]*;`,
+)
+
+// objcFloatConstants returns every `static const CGFloat NAME = <number>` in the
+// Objective-C source at repoRelPath, keyed by name.
+//
+// A pin that reads a rule out of a .m file has to read the rule's constants out
+// of the same file rather than binding their names to the Go values: bound to
+// Go, a native constant edited on its own would still be evaluated with the Go
+// number, and the pin would pass over exactly the divergence it exists to catch.
+func objcFloatConstants(t *testing.T, repoRelPath string) map[string]float64 {
+	t.Helper()
+
+	source := readNativeSource(t, repoRelPath)
+	constants := make(map[string]float64)
+
+	for _, match := range objcFloatConstantPattern.FindAllStringSubmatch(source, -1) {
+		value, err := strconv.ParseFloat(match[2], 64)
+		if err != nil {
+			t.Fatalf("%s: %s = %q is not a number: %v", repoRelPath, match[1], match[2], err)
+		}
+
+		constants[match[1]] = value
+	}
+
+	return constants
+}
+
 // objcEnumIntConstants returns the members of the `typedef NS_ENUM(_, enumName)`
 // declared in the Objective-C source at repoRelPath, keyed by member name. It
 // fails the test when the enum is not there at all, because a renamed enum is
