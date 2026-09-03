@@ -855,7 +855,7 @@ put in force.
 | **Traversal**           | Full recursive walk of the AXUIElement hierarchy | Recursive walk of the active frame's subtree, depth/node capped | Shallow walk of root-level nodes |
 | **Sources collected**   | Frontmost + all windows, popovers, menubar, dock, notification center, Stage Manager, PIP | Active frame's subtree only          | Root element's children, plus hit-tested caption buttons |
 | **Filtering**           | Role matching, size/position heuristics, excluded apps, dedup | Native AT-SPI roles, `SHOWING` state, on-screen extents | `IsControlElement` + `IsContentElement`, non-zero bounds |
-| **Strategies**          | `axtree` (default), `vision` and `hybrid`, incl. per-app overrides | `axtree` (default), `vision` and `hybrid`, text only | `axtree` (default), `vision` and `hybrid`, text only |
+| **Strategies**          | `axtree` (default), `vision`, `hybrid` and `contour`, incl. per-app overrides | `axtree` (default), `vision` and `hybrid`, text only, plus `contour` | `axtree` (default), `vision` and `hybrid`, text only, plus `contour` |
 | **Popovers / menus**    | ✅ dedicated detection                      | ⚠️ only if inside the active frame's subtree       | 🟡                                   |
 
 macOS builds the richest tree by a wide margin: it walks multiple window and
@@ -873,6 +873,25 @@ nothing platform-specific - so the three differ only in how good each half is.
 Where the tree is thin, plain `vision` stays the honest diagnostic: on Linux and
 Windows it returns recognized text and no tree contribution at all, by
 construction.
+
+**`contour` runs the same detector on all three** and has no option to declare
+per platform: it is pure Go edge detection over whatever the platform's own
+screen capture returns, so there is no per-platform engine behind it and nothing
+to gate. It exists for windows that publish neither a usable tree nor readable
+text - RDP and Citrix clients above all - and it returns unnamed geometry, so
+hint search and role filtering cannot narrow it. It asks the accessibility tree
+for nothing, which is why the menubar and dock carry no hints under it on macOS
+where `vision` keeps them.
+
+What does differ is the capture beneath it, in two places. Windows and Linux
+capture the region asked for; macOS has no region capture, so the whole main
+display is read and then clipped, and a window on a second monitor is refused
+with a message rather than hinted from the wrong pixels. And the display scale
+the detector's size thresholds are measured against is read per monitor on
+Windows and assumed to be 1 on Linux, where a per-output scale factor would mean
+carrying compositor state the capture path does not have - a HiDPI Wayland output
+therefore loses the smallest targets. Both are capture limitations rather than
+detector ones.
 
 **One control, two providers.** A tree can hand the same control back twice. New
 Outlook is the case that surfaced it: the host publishes minimize, maximize and

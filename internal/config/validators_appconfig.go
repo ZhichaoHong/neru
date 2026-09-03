@@ -202,12 +202,14 @@ func (c *Config) ValidateAppConfigs() error {
 			}
 
 			switch appConfig.Strategy {
-			case domain.StrategyAXTree, domain.StrategyVision, domain.StrategyHybrid, "":
+			case domain.StrategyAXTree, domain.StrategyVision, domain.StrategyHybrid,
+				domain.StrategyContour, "":
 			default:
 				return derrors.Newf(
 					derrors.CodeInvalidConfig,
-					"hints.app_configs[%d].strategy must be %q, %q or %q",
+					"hints.app_configs[%d].strategy must be %q, %q, %q or %q",
 					idx, domain.StrategyAXTree, domain.StrategyVision, domain.StrategyHybrid,
+					domain.StrategyContour,
 				)
 			}
 

@@ -27,6 +27,19 @@ func (a *Adapter) DetectElements(
 	)
 }
 
+// DetectContours reports not-supported. The detector itself is platform-neutral
+// Go and would run here happily; what is missing is the capture underneath it, so
+// the error names that rather than the strategy's algorithm.
+func (a *Adapter) DetectContours(
+	_ context.Context,
+	_ image.Rectangle,
+) ([]*element.Element, error) {
+	return nil, derrors.New(
+		derrors.CodeNotSupported,
+		"the contour strategy needs screen capture, which is not implemented on this platform",
+	)
+}
+
 // CaptureScreen reports not-supported: there is no capture backend on this
 // platform.
 func (a *Adapter) CaptureScreen(_ context.Context) (*image.RGBA, error) {

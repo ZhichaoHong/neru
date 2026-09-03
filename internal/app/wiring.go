@@ -180,7 +180,8 @@ func initializeServices(
 		)
 	}
 
-	// Vision adapter - vision-based element detection (optional, used on "vision" strategy)
+	// Vision adapter - the screen-reading detectors, used by the "vision",
+	// "hybrid" and "contour" strategies
 	visionPort := visionAdapter.NewAdapter(logger)
 
 	// Hint Service - orchestrates hint generation and display

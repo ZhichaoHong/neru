@@ -32,6 +32,22 @@ type VisionPort interface {
 		splitWord bool,
 	) ([]*element.Element, error)
 
+	// DetectContours captures screenBounds and returns the target-shaped edges in
+	// it as clickable elements. It asks the application for nothing - no tree, no
+	// text - which is what makes it the only strategy that reaches inside an RDP
+	// or Citrix client, a canvas app, or custom-drawn UI.
+	//
+	// It takes no config. Every threshold in the detector is a baked constant, by
+	// decision: a knob shipped is a knob supported forever, and nothing measured
+	// so far justifies one.
+	//
+	// The elements carry geometry, a Button role and nothing else. There is no
+	// title and no text, so hint search and role filtering cannot narrow them.
+	DetectContours(
+		ctx context.Context,
+		screenBounds image.Rectangle,
+	) ([]*element.Element, error)
+
 	// CaptureScreen returns the current screen image. Which screen "current"
 	// means is the platform's own answer: macOS captures the primary display,
 	// Linux the screen holding the cursor, because Wayland exposes no primary

@@ -1102,8 +1102,11 @@ func mustVisionElement(id string, bounds image.Rectangle) *element.Element {
 }
 
 type mockVisionPort struct {
-	detectedElements []*element.Element
-	detectErr        error
+	detectedElements  []*element.Element
+	detectErr         error
+	contouredElements []*element.Element
+	contourErr        error
+	contourCalls      int
 }
 
 func (m *mockVisionPort) DetectElements(
@@ -1117,6 +1120,19 @@ func (m *mockVisionPort) DetectElements(
 	}
 
 	return m.detectedElements, nil
+}
+
+func (m *mockVisionPort) DetectContours(
+	context.Context,
+	image.Rectangle,
+) ([]*element.Element, error) {
+	m.contourCalls++
+
+	if m.contourErr != nil {
+		return nil, m.contourErr
+	}
+
+	return m.contouredElements, nil
 }
 
 func (m *mockVisionPort) CaptureScreen(context.Context) (*image.RGBA, error) {
@@ -1399,6 +1415,167 @@ func TestHintService_GenerateHintsVisionSaysWhyItFellBackToTheScreen(t *testing.
 					logged, testCase.wantText)
 			}
 		})
+	}
+}
+
+// TestHintService_GenerateHintsContourNeverAsksTheTree pins what makes contour a
+// separate strategy rather than a third flavour of vision.
+//
+// Contour exists for the windows a tree cannot see into - an RDP client, a canvas,
+// custom-drawn UI - so it asks the tree for nothing at all. Vision still collects
+// the supplementary surfaces and hybrid walks the window as well; a refactor that
+// gave contour either would hint whatever chrome the tree happens to expose beside
+// a window it reported nothing for, and the hints would look like contour found
+// them.
+func TestHintService_GenerateHintsContourNeverAsksTheTree(t *testing.T) {
+	shape := mustVisionElement("contour_shape", image.Rect(40, 40, 120, 72))
+	other := mustVisionElement("contour_other", image.Rect(40, 100, 120, 132))
+
+	mockAcc := &mocks.MockAccessibilityPort{}
+	mockAcc.ClickableElementsFunc = func(
+		_ context.Context,
+		_ ports.ElementFilter,
+	) ([]*element.Element, error) {
+		t.Error("contour walked the accessibility tree; it is the strategy that asks for nothing")
+
+		return nil, nil
+	}
+
+	mockSystem := &mocks.MockSystemPort{}
+	mockSystem.FocusedWindowBoundsFunc = func(context.Context) (image.Rectangle, bool, error) {
+		return image.Rect(0, 0, 800, 600), true, nil
+	}
+
+	visionPort := &mockVisionPort{contouredElements: []*element.Element{shape, other}}
+
+	generator, _ := hint.NewAlphabetGenerator("asdf", hint.LabelDirectionNormal)
+	service := services.NewHintService(
+		mockAcc,
+		&mocks.MockOverlayPort{},
+		mockSystem,
+		generator,
+		config.HintsConfig{},
+		logger.Get(),
+		visionPort,
+	)
+
+	hints, err := service.GenerateHints(
+		context.Background(), nil, nil, "com.example.app", domain.StrategyContour, "", false,
+	)
+	if err != nil {
+		t.Fatalf("GenerateHints() unexpected error: %v", err)
+	}
+
+	if len(hints) != 2 {
+		t.Fatalf("GenerateHints() returned %d hints, want the 2 the detector found", len(hints))
+	}
+
+	if visionPort.contourCalls != 1 {
+		t.Errorf("DetectContours called %d times, want 1", visionPort.contourCalls)
+	}
+}
+
+// TestHintService_GenerateHintsContourHoldsResultsToTheFilter pins that the
+// activation's filter still runs over contour results, and documents what that
+// costs.
+//
+// A contour element is geometry with a Button role and no text whatsoever, so
+// --text can only ever match nothing. That is the strategy's documented
+// limitation rather than a filter bug, and the check has to stay: skipping it
+// would let --text pass every hint, which reads as a filter that lost results
+// rather than one that had nothing to match against.
+func TestHintService_GenerateHintsContourHoldsResultsToTheFilter(t *testing.T) {
+	shape := mustVisionElement("contour_shape", image.Rect(40, 40, 120, 72))
+
+	mockSystem := &mocks.MockSystemPort{}
+	mockSystem.FocusedWindowBoundsFunc = func(context.Context) (image.Rectangle, bool, error) {
+		return image.Rect(0, 0, 800, 600), true, nil
+	}
+
+	generator, _ := hint.NewAlphabetGenerator("asdf", hint.LabelDirectionNormal)
+	service := services.NewHintService(
+		&mocks.MockAccessibilityPort{},
+		&mocks.MockOverlayPort{},
+		mockSystem,
+		generator,
+		config.HintsConfig{},
+		logger.Get(),
+		&mockVisionPort{contouredElements: []*element.Element{shape}},
+	)
+
+	hints, err := service.GenerateHints(
+		context.Background(),
+		nil,
+		[]string{"Save"},
+		"com.example.app",
+		domain.StrategyContour,
+		"",
+		false,
+	)
+	if err != nil {
+		t.Fatalf("GenerateHints() unexpected error: %v", err)
+	}
+
+	if len(hints) != 0 {
+		t.Errorf(
+			"a text filter kept %d contour hints; contour elements carry no text to match",
+			len(hints),
+		)
+	}
+}
+
+// TestHintService_GenerateHintsContourNotifiesWhenTheStrategyIsUnavailable is the
+// same failure the vision half has, and it bites harder.
+//
+// Vision keeps the tree's supplementary elements when detection refuses, so
+// something reaches the overlay. Contour keeps nothing, so a CodeNotSupported
+// swallowed here is a hotkey that does nothing at all with no explanation - and a
+// log line reaches nobody (ADR 0002). The error names the missing capture path, so
+// it is the sentence the user needs.
+func TestHintService_GenerateHintsContourNotifiesWhenTheStrategyIsUnavailable(t *testing.T) {
+	const missing = "the contour strategy needs screen capture"
+
+	notified := make(chan string, 4)
+
+	mockSystem := &mocks.MockSystemPort{}
+	mockSystem.FocusedWindowBoundsFunc = func(context.Context) (image.Rectangle, bool, error) {
+		return image.Rect(0, 0, 200, 200), true, nil
+	}
+	mockSystem.ShowNotificationFunc = func(_ context.Context, _, message string) error {
+		notified <- message
+
+		return nil
+	}
+
+	generator, _ := hint.NewAlphabetGenerator("asdf", hint.LabelDirectionNormal)
+	service := services.NewHintService(
+		&mocks.MockAccessibilityPort{},
+		&mocks.MockOverlayPort{},
+		mockSystem,
+		generator,
+		config.HintsConfig{},
+		logger.Get(),
+		&mockVisionPort{contourErr: derrors.New(derrors.CodeNotSupported, missing)},
+	)
+
+	hints, err := service.GenerateHints(
+		context.Background(), nil, nil, "com.example.app", domain.StrategyContour, "", false,
+	)
+	if err != nil {
+		t.Fatalf("GenerateHints() unexpected error: %v", err)
+	}
+
+	if len(hints) != 0 {
+		t.Errorf("GenerateHints() returned %d hints after the detector refused", len(hints))
+	}
+
+	select {
+	case message := <-notified:
+		if !strings.Contains(message, missing) {
+			t.Errorf("notification %q does not carry what the error named", message)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("contour reported CodeNotSupported and the user was never told")
 	}
 }
 

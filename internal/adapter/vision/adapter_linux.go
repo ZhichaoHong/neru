@@ -159,6 +159,64 @@ func toRecognizedWords(words []platformlinux.OCRWord) []recognizedWord {
 	return converted
 }
 
+// DetectContours captures screenBounds and returns the target-shaped edges in it
+// as hintable elements. The capture is the same backend DetectElements uses; the
+// engine above it is pure Go, so unlike the OCR half this needs no tesseract and
+// no language data, and cannot fail for want of either.
+//
+// screenBounds is in global top-left-origin unscaled pixels, and an empty
+// rectangle is refused for the same reason as above: it is what places the
+// results.
+//
+// The scale passed to the detector is 1, and that is a limitation rather than a
+// measurement. Both capture paths hand back unscaled pixels in the same space the
+// window rect is in, so the two scales agree and the rectangles need no
+// correction - but on a HiDPI Wayland output the detector is then judging sizes
+// in physical pixels against thresholds written in logical ones, and its smallest
+// targets fall through the size floor. Reading a per-output scale factor means
+// reaching for wl_output state this adapter does not hold, so the honest position
+// is 1 with the consequence written down.
+func (a *Adapter) DetectContours(
+	ctx context.Context,
+	screenBounds image.Rectangle,
+) ([]*element.Element, error) {
+	select {
+	case <-ctx.Done():
+		return nil, derrors.Wrap(ctx.Err(), derrors.CodeContextCanceled, "operation canceled")
+	default:
+	}
+
+	region := screenBounds.Canon()
+	if region.Empty() {
+		return nil, derrors.Newf(
+			derrors.CodeActionFailed,
+			"contour detection needs a region to read; %v is empty",
+			screenBounds,
+		)
+	}
+
+	img, err := a.captureRegion(ctx, region)
+	if err != nil {
+		return nil, err
+	}
+
+	started := time.Now()
+
+	elements, err := contourElements(img, region.Min, region, 1, 1)
+	if err != nil {
+		return nil, err
+	}
+
+	a.logger.Debug("Contour detection complete",
+		zap.Duration("detection", time.Since(started)),
+		zap.Int("frame_width", img.Rect.Dx()),
+		zap.Int("frame_height", img.Rect.Dy()),
+		zap.Int("elements", len(elements)),
+	)
+
+	return elements, nil
+}
+
 // CaptureScreen returns the pixels currently on the active screen.
 func (a *Adapter) CaptureScreen(ctx context.Context) (*image.RGBA, error) {
 	return a.captureRegion(ctx, image.Rectangle{})

@@ -781,7 +781,7 @@ Explicit component colors override theme derivation. Omitted colors inherit from
 
 ## [hints]
 
-Labels clickable UI elements with short overlay labels. By default uses the platform accessibility tree (`axtree` strategy). Optionally uses on-screen recognition (`vision` strategy) for apps whose accessibility tree is too thin to hint from - detects elements from a screen capture scoped to the focused window, through the Vision framework on macOS (text plus rectangles), tesseract on Linux and `Windows.Media.Ocr` on Windows (text only on both). The `hybrid` strategy runs both and merges them, which is the one to reach for when a tree is partly usable rather than useless.
+Labels clickable UI elements with short overlay labels. By default uses the platform accessibility tree (`axtree` strategy). Optionally uses on-screen recognition (`vision` strategy) for apps whose accessibility tree is too thin to hint from - detects elements from a screen capture scoped to the focused window, through the Vision framework on macOS (text plus rectangles), tesseract on Linux and `Windows.Media.Ocr` on Windows (text only on both). The `hybrid` strategy runs both and merges them, which is the one to reach for when a tree is partly usable rather than useless. The `contour` strategy asks the application for nothing and detects target-shaped edges in the capture, for windows that expose neither a tree nor readable text - RDP and Citrix clients, canvas apps, custom-drawn UI.
 
 Press `/` to text-search elements. `Space` for multi-word queries. `Return` confirms filtered hints (first is auto-selected). `Escape` cancels search.
 
@@ -792,7 +792,7 @@ Start with search visible: `neru hints --search` (see [CLI.md](CLI.md#neru-hints
 | Option                             | Type         | Default                 | Description                                                                                                                                                                                                                                                                                                                          |
 | ---------------------------------- | ------------ | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `enabled`                          | bool         | `true`                  | Enable/disable hints mode                                                                                                                                                                                                                                                                                                            |
-| `strategy`                         | string       | `"axtree"`              | Element detection strategy: `"axtree"` (the platform accessibility tree), `"vision"` (screen recognition: the Vision framework on macOS, tesseract on Linux, `Windows.Media.Ocr` on Windows) or `"hybrid"` (both, merged). Vision detects the frontmost window content from a screen capture while still using the accessibility tree for system elements (menubar, dock, NC); hybrid walks the window tree as well and drops the recognized regions the tree already answered for. Overridable per-app via `[hints.app_configs]`. See [Choosing a strategy](#choosing-a-strategy) below. |
+| `strategy`                         | string       | `"axtree"`              | Element detection strategy: `"axtree"` (the platform accessibility tree), `"vision"` (screen recognition: the Vision framework on macOS, tesseract on Linux, `Windows.Media.Ocr` on Windows), `"hybrid"` (both, merged) or `"contour"` (edge detection over the capture). Vision detects the frontmost window content from a screen capture while still using the accessibility tree for system elements (menubar, dock, NC); hybrid walks the window tree as well and drops the recognized regions the tree already answered for; contour reads neither tree nor text and returns unnamed geometry, so hint search cannot match it. Overridable per-app via `[hints.app_configs]`. See [Choosing a strategy](#choosing-a-strategy) below. |
 | `hint_characters`                  | string       | `"asdfghjkl"`           | Characters used for labels                                                                                                                                                                                                                                                                                                           |
 | `label_direction`                  | string       | `"normal"`              | Hint label algorithm: `"normal"` (default, prefix-avoidance greedy) or `"reverse"` (reverse-order tiers). Empty value defaults to `"normal"`. Overridable per-app via `[hints.app_configs]` and per-activation via the `neru hints --label-direction` CLI flag. See [Choosing a label direction](#choosing-a-label-direction) below. |
 | `max_depth`                        | int          | `50`                    | Max accessibility tree depth (0 = unlimited)                                                                                                                                                                                                                                                                                         |
@@ -1031,13 +1031,14 @@ generic_clickable_min_confidence = 0.5
 
 ### Choosing a strategy
 
-Three values, and the useful distinction between them is what happens to the focused window rather than what engine runs.
+Four values, and the useful distinction between them is what happens to the focused window rather than what engine runs.
 
 | Strategy           | The focused window                        | System chrome (menubar, dock, NC) | Cost                                     |
 | ------------------ | ----------------------------------------- | --------------------------------- | ---------------------------------------- |
 | `axtree` (default) | accessibility tree                        | accessibility tree                | one tree walk                            |
 | `vision`           | screen recognition only                    | accessibility tree                | one capture plus one OCR pass            |
 | `hybrid`           | both, with the tree winning any overlap   | accessibility tree                | the tree walk **plus** the capture and OCR |
+| `contour`          | edge detection over the capture            | **nothing** - not hinted          | one capture plus one detection pass      |
 
 **Reach for `axtree` unless something is missing.** It is the cheapest and the only one that reads a real role and title for every element, which is what `--filter-role` and hint search work from.
 
@@ -1047,7 +1048,21 @@ Three values, and the useful distinction between them is what happens to the foc
 
 Two things to know before setting it globally. Hybrid pays the sum of both halves rather than the larger, sequentially, so activation is slower than either alone. And per-app is usually the better shape: one badly behaved app on `hybrid` via `[[hints.app_configs]]` while everything else stays on the cheap tree walk.
 
-`--split-word` applies to `vision` and `hybrid`, and is refused under `axtree` - there is no recognized text to split.
+**Reach for `contour` when a window exposes nothing at all** - an RDP or Citrix client, a canvas app, custom-drawn UI. It ignores the application entirely and finds candidate targets from the shapes in the capture: grayscale, blur, Sobel, Canny hysteresis, then the bounding boxes of what looks button-sized or icon-sized. Where a remote desktop gives the accessibility tree a window frame and nothing inside it, this is the only strategy that returns the remote taskbar, the remote address bar and the remote application's own controls.
+
+What it costs you is names. A contour hint is geometry with no role and no title, so:
+
+- **Hint search (`/`) matches nothing against a contour hint.** This is by construction, not a bug: there is no text to match. Accepted behaviour.
+- **`--role` filtering does not narrow contour hints either.** Every contour hint reports the platform's own name for a button - `AXButton`, `Button`, `push button` - because the detector cannot tell what a rectangle is and a role nobody lists in `clickable_roles` would be filtered away before it reached the overlay. So `--role button` keeps all of them and any other role keeps none. The corollary: a `clickable_roles` list with `button` removed shows no contour hints at all.
+- **It finds text as readily as controls**, and cannot tell a link from a noun in a sentence. Same-line boxes are merged into one hint and over-wide runs are dropped, which removes most body prose, but a narrow text column still comes back as a stack of line-shaped hints. A terminal is the worst case.
+- **A low-contrast filled control may hint its label rather than its edge**, and one with neither text nor an icon may not be found at all.
+- **The focused window is all you get.** Contour never asks the accessibility tree, so unlike `vision` it does not keep the menubar, the dock or notification centre. That is the point of the strategy - it is for the windows a tree cannot answer for - but it means the system chrome carries no hints while it is active. With nothing focused it reads the whole screen instead.
+
+Budget roughly 100 to 160 ms of detection on a 4K frame, plus the capture. Like the other screen-reading strategies it needs the screen-recording permission, and per-app via `[[hints.app_configs]]` is the right shape - set it on the RDP client, leave everything else on `axtree`.
+
+Two platform limits, both documented rather than worked around. On macOS the capture is the main display only, so a window on a second monitor is refused with a message saying so rather than hinted from the wrong pixels. And on a HiDPI Linux output the detector measures in physical pixels against thresholds written in logical ones, which loses the smallest targets - reading a per-output scale factor needs compositor state the capture path does not carry. Inside an RDP or Citrix client the same mismatch is unfixable everywhere: those pixels arrive with the remote session's DPI and no local API can report it.
+
+`--split-word` applies to `vision` and `hybrid`, and is refused under `axtree` and `contour` - neither has recognized text to split.
 
 ### Choosing a label direction
 
@@ -1075,7 +1090,7 @@ You can also mix directions per-app via `[hints.app_configs]` or per-activation 
 | Field                        | Type   | Description                                                                                                                                                                               |
 | ---------------------------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `bundle_id`                  | string | App bundle ID                                                                                                                                                                             |
-| `strategy`                   | string | Override element detection strategy for this app (`"axtree"`, `"vision"` or `"hybrid"`). Empty string = use global `hints.strategy`. See [Choosing a strategy](#choosing-a-strategy).      |
+| `strategy`                   | string | Override element detection strategy for this app (`"axtree"`, `"vision"`, `"hybrid"` or `"contour"`). Empty string = use global `hints.strategy`. See [Choosing a strategy](#choosing-a-strategy).      |
 | `label_direction`            | string | Override hint label algorithm for this app (`"normal"` or `"reverse"`). Empty string = use global `hints.label_direction`. See [Choosing a label direction](#choosing-a-label-direction). |
 | `additional_clickable_roles` | array  | Extra roles to treat as clickable, same vocabulary as [`clickable_roles`](#clickable-roles)                                                                                              |
 | `ignore_clickable_check`     | bool   | Skip clickability heuristic for this app                                                                                                                                                  |

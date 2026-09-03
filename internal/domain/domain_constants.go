@@ -79,18 +79,34 @@ const (
 	// StrategyHybrid does both and merges the two sets, with the accessibility
 	// tree winning every overlap.
 	StrategyHybrid = "hybrid"
+
+	// StrategyContour detects elements from the shapes in the screen image,
+	// asking the application for nothing at all. It is for windows the other
+	// three cannot see into: RDP and Citrix clients, canvas apps, custom-drawn
+	// UI. Its hints carry geometry and no text, so hint search cannot match them.
+	StrategyContour = "contour"
 )
 
 // StrategyReadsScreen reports whether a strategy captures the screen, which is
-// what decides three things a caller cannot answer from the value alone: whether
-// the screen-recording permission is a prerequisite, whether a refresh has to
-// take the overlay down before the capture, and whether --split-word means
-// anything.
+// what decides two things a caller cannot answer from the value alone: whether
+// the screen-recording permission is a prerequisite, and whether a refresh has
+// to take the overlay down before the capture.
 //
-// It exists so those three sites cannot drift apart. Each was a comparison
-// against StrategyVision, and each was wrong the moment a second screen-reading
-// strategy existed.
+// It exists so those sites cannot drift apart. Each was a comparison against
+// StrategyVision, and each was wrong the moment a second screen-reading strategy
+// existed.
 func StrategyReadsScreen(strategy string) bool {
+	return strategy == StrategyVision || strategy == StrategyHybrid ||
+		strategy == StrategyContour
+}
+
+// StrategyReadsText reports whether a strategy recognises text in the capture,
+// which is what --split-word splits.
+//
+// This used to be the same question as StrategyReadsScreen and stopped being one
+// when contour arrived: contour reads the screen but finds shapes, so it needs
+// the capture permission and the overlay taken down, and has no words to split.
+func StrategyReadsText(strategy string) bool {
 	return strategy == StrategyVision || strategy == StrategyHybrid
 }
 

@@ -147,6 +147,97 @@ func (a *Adapter) DetectElements(
 	return elements, nil
 }
 
+// DetectContours captures the main display and returns the target-shaped edges
+// inside screenBounds as hintable elements. Unlike DetectElements this runs no
+// Vision request: the detector is platform-neutral Go over the pixels, so the only
+// native part of this path is the capture.
+//
+// Two consequences of that capture being the main display's, both of which are
+// limitations rather than choices:
+//
+// A window on a secondary display cannot be read. NeruDetectElements captures the
+// display containing the rect it is given; NeruCaptureScreen takes the main one and
+// nothing else. Clipping would then reduce every rectangle to nothing, so this
+// refuses instead - an empty overlay says nothing about why it is empty.
+//
+// And the whole display is detected before the clip, so a small window on a large
+// display costs a full-screen pass. Region capture on macOS is the fix and it
+// belongs in the platform layer beside the Windows and Linux ones, not here.
+//
+// The two scales are the same number, derived rather than assumed: the frame is
+// pixels and screenBounds is points, so the ratio between the captured width and
+// the display's width in points is both the display's backing scale and the frame
+// pixels per point. They cancel, which is right - the detector's thresholds are
+// logical-pixel numbers and points already are logical pixels.
+func (a *Adapter) DetectContours(
+	ctx context.Context,
+	screenBounds image.Rectangle,
+) ([]*element.Element, error) {
+	select {
+	case <-ctx.Done():
+		return nil, derrors.Wrap(ctx.Err(), derrors.CodeContextCanceled, "operation canceled")
+	default:
+	}
+
+	region := screenBounds.Canon()
+	if region.Empty() {
+		return nil, derrors.Newf(
+			derrors.CodeActionFailed,
+			"contour detection needs a region to read; %v is empty",
+			screenBounds,
+		)
+	}
+
+	mainDisplay := mainDisplayBounds()
+	if !region.Overlaps(mainDisplay) {
+		return nil, derrors.Newf(
+			derrors.CodeNotSupported,
+			"the contour strategy reads the main display only, and %v is outside it (%v)",
+			region,
+			mainDisplay,
+		)
+	}
+
+	img, err := a.CaptureScreen(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	scale := 1.0
+	if width := mainDisplay.Dx(); width > 0 && img.Rect.Dx() > 0 {
+		scale = float64(img.Rect.Dx()) / float64(width)
+	}
+
+	elements, err := contourElements(img, image.Point{}, region, scale, scale)
+	if err != nil {
+		return nil, err
+	}
+
+	a.logger.Debug("Contour detection complete",
+		zap.Float64("scale", scale),
+		zap.Int("frame_width", img.Rect.Dx()),
+		zap.Int("frame_height", img.Rect.Dy()),
+		zap.Int("elements", len(elements)),
+	)
+
+	return elements, nil
+}
+
+// mainDisplayBounds is the main display's rectangle in global points, top-left
+// origin, which is the space window bounds arrive in. It is the frame's extent as
+// the rest of the pipeline measures it, so it answers both where the capture
+// reaches and how many pixels went into each point of it.
+func mainDisplayBounds() image.Rectangle {
+	bounds := C.CGDisplayBounds(C.CGMainDisplayID())
+
+	return image.Rect(
+		int(bounds.origin.x),
+		int(bounds.origin.y),
+		int(bounds.origin.x+bounds.size.width),
+		int(bounds.origin.y+bounds.size.height),
+	)
+}
+
 // CaptureScreen captures the current screen image for the primary display.
 func (a *Adapter) CaptureScreen(_ context.Context) (*image.RGBA, error) {
 	cgImage := C.NeruCaptureScreen()

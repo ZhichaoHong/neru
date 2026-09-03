@@ -64,7 +64,7 @@ text = "#E8EEFF"
 # See https://github.com/y3owk1n/neru/blob/main/docs/CONFIGURATION.md#hints
 [hints]
 enabled = true
-strategy = "axtree"                         # Element detection: "axtree" (accessibility tree), "vision" (screen recognition) or "hybrid" (both)
+strategy = "axtree"                         # Element detection: "axtree" (accessibility tree), "vision" (screen recognition), "hybrid" (both) or "contour" (edge detection, for windows that expose nothing)
 hint_characters = "asdfghjkl"               # Characters used for hint labels
 label_direction = "normal"                  # Hint label algorithm: "normal" (default) or "reverse"
 max_depth = 50                              # Max accessibility tree depth (0 = unlimited)

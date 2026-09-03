@@ -189,6 +189,68 @@ func toRecognizedWords(words []winplatform.OCRWord) []recognizedWord {
 	return converted
 }
 
+// DetectContours captures screenBounds and returns the target-shaped edges in it
+// as hintable elements. The capture is the same GDI path DetectElements uses; the
+// engine above it is pure Go, so unlike the OCR half this needs nothing installed
+// and cannot fail for want of language data.
+//
+// screenBounds is in virtual-desktop physical pixels, and an empty rectangle is
+// refused for the same reason as above: it is what places the results.
+//
+// The scale passed to the detector is the monitor's own, read at the region's
+// top-left corner rather than at the cursor, so a mixed-DPI desk measures the
+// window where the window is. Inside an RDP or Citrix client this value is wrong
+// and cannot be made right - those pixels carry the remote session's DPI, so a
+// remote session at a lower DPI loses its smallest targets under the detector's
+// size floor. Documented in the contour package and in the strategy docs rather
+// than worked around, because no local API can read a remote session's DPI.
+func (a *Adapter) DetectContours(
+	ctx context.Context,
+	screenBounds image.Rectangle,
+) ([]*element.Element, error) {
+	select {
+	case <-ctx.Done():
+		return nil, derrors.Wrap(ctx.Err(), derrors.CodeContextCanceled, "operation canceled")
+	default:
+	}
+
+	region := screenBounds.Canon()
+	if region.Empty() {
+		return nil, derrors.Newf(
+			derrors.CodeActionFailed,
+			"contour detection needs a region to read; %v is empty",
+			screenBounds,
+		)
+	}
+
+	img, err := a.captureRegion(ctx, region)
+	if err != nil {
+		return nil, err
+	}
+
+	scale := winplatform.ScreenScaleAt(region.Min)
+
+	started := time.Now()
+
+	// frameScale is 1: the capture and the window rect are both virtual-desktop
+	// physical pixels, so the detector's logical rectangles have to be multiplied
+	// by the display scale to land back on them.
+	elements, err := contourElements(img, region.Min, region, scale, 1)
+	if err != nil {
+		return nil, err
+	}
+
+	a.logger.Debug("Contour detection complete",
+		zap.Duration("detection", time.Since(started)),
+		zap.Float64("scale", scale),
+		zap.Int("frame_width", img.Rect.Dx()),
+		zap.Int("frame_height", img.Rect.Dy()),
+		zap.Int("elements", len(elements)),
+	)
+
+	return elements, nil
+}
+
 // CaptureScreen returns the pixels currently on the active screen, which on
 // Windows means the whole virtual desktop - the union of every monitor, not the
 // primary one.

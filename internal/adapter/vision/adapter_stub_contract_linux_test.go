@@ -121,6 +121,68 @@ func TestVisionAdapter_DetectElementsIsCancelable(t *testing.T) {
 	}
 }
 
+// TestVisionAdapter_DetectContoursAnswersOnLinux holds the contour half to the
+// same rule as the OCR half: a result or an error, never neither.
+//
+// It matters more here than for vision. Contour keeps no accessibility elements
+// alongside its own, so a (nil, nil) answer is an empty overlay with nothing in
+// the pipeline able to say why. The runner has no display server, so this pins the
+// shape rather than the pixels; a session with a compositor takes the same path.
+func TestVisionAdapter_DetectContoursAnswersOnLinux(t *testing.T) {
+	adapter := vision.NewAdapter(nil)
+
+	elements, err := adapter.DetectContours(
+		context.Background(),
+		image.Rect(0, 0, 200, 200),
+	)
+
+	if err == nil && elements == nil {
+		t.Fatal(
+			"DetectContours returned no elements and no error; a caller cannot tell that apart from a blank screen",
+		)
+	}
+
+	if err != nil && elements != nil {
+		t.Errorf("DetectContours returned %d elements alongside its error %v", len(elements), err)
+	}
+}
+
+// TestVisionAdapter_DetectContoursRefusesAnEmptyRegion pins the one request with
+// no correct answer, for the same reason DetectElements refuses it: the region is
+// what places every result, so an empty one cannot be read as "the whole screen".
+func TestVisionAdapter_DetectContoursRefusesAnEmptyRegion(t *testing.T) {
+	adapter := vision.NewAdapter(nil)
+
+	elements, err := adapter.DetectContours(context.Background(), image.Rectangle{})
+	if err == nil {
+		t.Fatalf("DetectContours accepted an empty region and returned %d elements", len(elements))
+	}
+
+	if elements != nil {
+		t.Error("DetectContours returned elements alongside its error")
+	}
+}
+
+// TestVisionAdapter_DetectContoursIsCancelable keeps a caller that has given up
+// from paying for a capture and an edge-detection pass nobody will read. The
+// detector is a handful of full-frame passes, so this is the expensive call in the
+// contour path even with no OCR engine behind it.
+func TestVisionAdapter_DetectContoursIsCancelable(t *testing.T) {
+	adapter := vision.NewAdapter(nil)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	elements, err := adapter.DetectContours(ctx, image.Rect(0, 0, 200, 200))
+	if err == nil {
+		t.Fatal("DetectContours ignored a canceled context")
+	}
+
+	if elements != nil {
+		t.Error("DetectContours returned elements for a canceled context")
+	}
+}
+
 // TestVisionAdapter_HealthNamesWhatIsMissingOnLinux is the acceptance criterion
 // for the pieces no linking decision can settle. The strategy needs two things
 // this machine may not have — a display server that can be captured, and

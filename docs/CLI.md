@@ -303,7 +303,7 @@ nothing.
 | `--hide-on-empty-search` |  | none | `hints` | Hide all hints when search query is empty (requires --search) |
 | `--role` |  | value, repeatable | `hints` | Filter by element role (comma-separated: button,link — the hints.clickable_roles vocabulary, see 'neru roles'). Repeat the flag to add more |
 | `--text` |  | value, repeatable | `hints` | Filter elements by text content (comma-separated, case-insensitive substring match). Repeat the flag to add more |
-| `--strategy` |  | value | `hints` | Element detection strategy: axtree (the platform accessibility tree), vision (screen recognition: the Vision framework on macOS, tesseract on Linux, Windows.Media.Ocr on Windows), or hybrid (both, with the tree winning any overlap) |
+| `--strategy` |  | value | `hints` | Element detection strategy: axtree (the platform accessibility tree), vision (screen recognition: the Vision framework on macOS, tesseract on Linux, Windows.Media.Ocr on Windows), hybrid (both, with the tree winning any overlap), or contour (edge detection over the capture, for windows that expose nothing) |
 | `--label-direction` |  | value | `hints` | Hint label enumeration: normal (default, prefix-avoidance, prefers shorter labels) or reverse (spreads labels across the alphabet) |
 | `--split-word` |  | none | `hints` | Split detected text into word-level regions (requires the vision or hybrid strategy) |
 | `--zoom-to-depth` |  | value | `recursive_grid` | Auto-zoom to the given depth (a non-negative integer) in recursive-grid at the current cursor position |
@@ -350,9 +350,12 @@ label on each. Typing a label selects that element.
 
 Element discovery uses the `axtree` strategy by default. `vision` detects
 elements by recognizing what is on screen instead, and `hybrid` does both and
-merges them with the tree winning any overlap. All three work on all three
-platforms, with a different recognition engine behind the screen-reading ones on
-each; coverage per platform is documented in
+merges them with the tree winning any overlap. `contour` finds shapes by edge
+detection over the capture, for windows that expose neither a tree nor readable
+text; it asks the tree for nothing, so the menubar and dock carry no hints under
+it, and every hint it produces reports as a button because the pixels do not say
+what a rectangle is. All four work on all three platforms, with a different recognition engine
+behind the screen-reading ones on each; coverage per platform is documented in
 [CROSS_PLATFORM.md](CROSS_PLATFORM.md#accessibility-and-hints) and the choice
 between them in
 [CONFIGURATION.md](CONFIGURATION.md#choosing-a-strategy).

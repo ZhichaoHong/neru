@@ -102,7 +102,7 @@ func TestValidateModeCommands_RefusesAnUnreadableCommand(t *testing.T) {
 		{
 			name: "unusable value",
 			step: "hints --strategy=nonsense",
-			want: "hotkeys.k: --strategy requires axtree, vision or hybrid",
+			want: "hotkeys.k: --strategy requires axtree, vision, hybrid or contour",
 		},
 		{
 			name: "action no mode can perform",

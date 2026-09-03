@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"image"
 	"slices"
 	"strings"
 	"sync"
@@ -121,7 +122,7 @@ func (s *HintService) GenerateHints(
 		labelDirection = labelDirectionOverride
 	}
 
-	if splitWord && !domain.StrategyReadsScreen(strategy) {
+	if splitWord && !domain.StrategyReadsText(strategy) {
 		return nil, derrors.New(
 			derrors.CodeInvalidInput,
 			"--split-word is only supported when the resolved strategy is 'vision' or 'hybrid'",
@@ -134,9 +135,10 @@ func (s *HintService) GenerateHints(
 	)
 
 	// Branching on the resolved strategy, which is a config value the user set and
-	// not a platform, so the One Rule is intact. What separates the two screen
-	// strategies is one filter flag: vision leaves the window to OCR, hybrid walks
-	// it as well and then drops the OCR regions the tree answered for.
+	// not a platform, so the One Rule is intact. What separates vision from hybrid
+	// is one filter flag: vision leaves the window to OCR, hybrid walks it as well
+	// and then drops the OCR regions the tree answered for. Contour is the odd one
+	// out - it reads the screen too, but asks the tree for nothing at all.
 	switch strategy {
 	case domain.StrategyVision:
 		elements = s.generateHintsVision(ctx, filter, splitWord, true)
@@ -152,6 +154,8 @@ func (s *HintService) GenerateHints(
 			),
 			filter,
 		)
+	case domain.StrategyContour:
+		elements = s.generateHintsContour(ctx, filter)
 	default:
 		elements, genErr = s.generateHintsAX(ctx, filter)
 	}
@@ -368,29 +372,9 @@ func (s *HintService) generateHintsVision(
 		return allElements
 	}
 
-	// Get focused window bounds for vision detection
-	windowBounds, found, boundsErr := s.system.FocusedWindowBounds(ctx)
-	if boundsErr != nil || !found {
-		// The two ways of getting here are not the same event. found=false with
-		// no error is a desktop with nothing focused — routine, and the whole
-		// screen is the right answer. An error means the platform could not
-		// answer at all, and then scanning the whole screen is a degradation
-		// nobody asked for: slower, noisier, and silent until now.
-		if boundsErr != nil {
-			s.logger.Warn(
-				"Could not read the focused window, scanning the whole screen instead",
-				zap.Error(boundsErr),
-			)
-		} else {
-			s.logger.Debug("No focused window, scanning the whole screen")
-		}
-
-		windowBounds, boundsErr = s.system.ScreenBounds(ctx)
-		if boundsErr != nil {
-			s.logger.Error("Failed to get screen bounds for vision detection", zap.Error(boundsErr))
-
-			return allElements
-		}
+	windowBounds, haveRegion := s.regionToRead(ctx)
+	if !haveRegion {
+		return allElements
 	}
 
 	// Detect window elements via vision
@@ -436,6 +420,107 @@ func (s *HintService) generateHintsVision(
 	}
 
 	return allElements
+}
+
+// generateHintsContour reads the focused window's pixels and hints the shapes it
+// finds there. Every strategy that reads the screen shares that much; what makes
+// this one different is what it does not do.
+//
+// It never calls the accessibility tree. Vision asks for the supplementary
+// surfaces - the menubar, the dock, notification centre - and hybrid walks the
+// window as well, but contour exists for the windows a tree cannot see into, and
+// asking anyway would mean hinting whatever chrome the tree happens to expose
+// beside a window it reported nothing for. So on a macOS desktop the menubar and
+// dock carry no contour hints, and that is the strategy behaving as chosen rather
+// than a gap. Nothing is subtracted or merged either - with no tree half there is
+// nothing to reconcile against.
+//
+// The filter still runs, and mostly cannot bite: a contour element has geometry, a
+// Button role and no text at all, so a role filter for buttons keeps everything and
+// --text keeps nothing. That is the documented limitation of the strategy rather
+// than a filter bug, and the check stays because skipping it would let --text
+// silently pass every hint, which reads as a filter that lost results.
+func (s *HintService) generateHintsContour(
+	ctx context.Context,
+	filter ports.ElementFilter,
+) []*element.Element {
+	if s.vision == nil {
+		s.logger.Warn("Contour strategy selected but vision port is unavailable")
+
+		return nil
+	}
+
+	region, haveRegion := s.regionToRead(ctx)
+	if !haveRegion {
+		return nil
+	}
+
+	contourStart := time.Now()
+	detected, detectErr := s.vision.DetectContours(ctx, region)
+	s.logger.Debug("TIMING: Window elements (contour)",
+		zap.Duration("elapsed", time.Since(contourStart)),
+		zap.Int("count", len(detected)),
+		zap.Error(detectErr))
+
+	if detectErr != nil {
+		s.logger.Error("Failed to detect elements via contour", zap.Error(detectErr))
+
+		// Same reasoning as the vision half, and it bites harder here: contour keeps
+		// no tree elements, so a failure leaves an empty overlay and the log line
+		// reaches nobody (ADR 0002). CodeNotSupported means this platform has no
+		// capture path at all, which a person has to be told.
+		if derrors.IsNotSupported(detectErr) {
+			s.notifyVisionUnavailable(ctx, detectErr.Error())
+		}
+
+		return nil
+	}
+
+	elements := make([]*element.Element, 0, len(detected))
+
+	for _, candidate := range detected {
+		if filter.Matches(candidate) {
+			elements = append(elements, candidate)
+		}
+	}
+
+	return elements
+}
+
+// regionToRead answers which rectangle a screen-reading strategy should be
+// pointed at: the focused window, or the whole screen when nothing is focused.
+//
+// The two ways of losing the window are not the same event. found=false with no
+// error is a desktop with nothing focused - routine, and the whole screen is the
+// right answer. An error means the platform could not answer at all, and then
+// scanning the whole screen is a degradation nobody asked for: slower, noisier,
+// and silent until now.
+//
+// ok is false only when neither question could be answered, and then the caller
+// has no region to capture and nothing to hint.
+func (s *HintService) regionToRead(ctx context.Context) (image.Rectangle, bool) {
+	windowBounds, found, boundsErr := s.system.FocusedWindowBounds(ctx)
+	if boundsErr == nil && found {
+		return windowBounds, true
+	}
+
+	if boundsErr != nil {
+		s.logger.Warn(
+			"Could not read the focused window, scanning the whole screen instead",
+			zap.Error(boundsErr),
+		)
+	} else {
+		s.logger.Debug("No focused window, scanning the whole screen")
+	}
+
+	screenBounds, screenErr := s.system.ScreenBounds(ctx)
+	if screenErr != nil {
+		s.logger.Error("Failed to get screen bounds for screen detection", zap.Error(screenErr))
+
+		return image.Rectangle{}, false
+	}
+
+	return screenBounds, true
 }
 
 // notifyVisionUnavailable tells the user, once, that the vision strategy

@@ -36,6 +36,13 @@ var HintsCmd = BuildModeCommand(ModeConfig{
   accessibility tree found and adding the recognized text it missed. Reach for
   it when a tree is partly usable; it costs the tree walk plus the recognition.
 
+  Use --strategy contour when a window exposes nothing to walk and nothing to
+  read - an RDP or Citrix client, a canvas app, custom-drawn UI. It finds shapes
+  by edge detection over the capture, so its hints have no text and --search
+  cannot match them, and each one reports as a button because pixels do not say
+  what a rectangle is. It reads the focused window and asks the accessibility
+  tree for nothing, so the menubar and dock are not hinted while it is active.
+
   Use --split-word to split detected text into word-level regions (requires
   the vision or hybrid strategy).
 
