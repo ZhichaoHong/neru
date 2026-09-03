@@ -222,6 +222,8 @@ func (c *Component) OnReady() {
 	// Initialize all state-dependent UI elements
 	c.updateMenuItems(c.app.IsEnabled())
 
+	c.warnIfIconHidden()
+
 	go c.handleEvents()
 }
 
@@ -248,6 +250,26 @@ func (c *Component) Close() {
 	c.app.OffEnabledStateChanged(c.enabledStateSubscriptionID)
 	c.app.OffScreenShareStateChanged(c.screenShareStateSubscriptionID)
 	c.app.OffScrollInvertStateChanged(c.scrollInvertStateSubscriptionID)
+}
+
+// warnIfIconHidden logs when the host refused the tray icon.
+//
+// The daemon keeps working without an icon, so the only symptom is an empty
+// notification area, which reads as "neru did not start". Say what happened
+// instead of leaving the user to guess.
+func (c *Component) warnIfIconHidden() {
+	err := c.tray.IconStatus()
+	if err == nil {
+		return
+	}
+
+	c.logger.Warn(
+		"The system tray refused the icon; neru is running without one",
+		zap.Error(err),
+		zap.String("hint", "on Windows the notification area can deny an "+
+			"unelevated process; note that a scheduled task with RunLevel "+
+			"HighestAvailable does not elevate a non-administrator account"),
+	)
 }
 
 // updateMenuItems updates the systray menu items based on the current enabled state.

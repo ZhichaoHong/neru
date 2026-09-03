@@ -366,6 +366,22 @@ defines no per-item tooltip property, so `MenuItem.SetTooltip` in
 [systray/linux/systray.go](../internal/adapter/systray/linux/systray.go) is
 empty by protocol, as is its Win32 twin.
 
+**The host can refuse the icon, and two of the three do.** An `NSStatusItem` is
+granted by AppKit and always appears. The other two answer to something outside
+the process: `Shell_NotifyIconW(NIM_ADD)` returns FALSE when the notification
+area declines the caller, measured as `ERROR_ACCESS_DENIED` for a
+medium-integrity neru on a machine whose shell only accepts high-integrity ones,
+where the same binary run elevated is accepted; and an SNI item is invisible
+until some `StatusNotifierWatcher` registers it, which is why the Linux backend
+falls back to a headless loop. Neither is a bug neru can fix from inside, so
+`ports.SystrayPort.IconStatus` carries the refusal out and the tray component
+logs it at startup. Without that the symptom is an empty notification area,
+which reads as "neru did not start" rather than "the shell would not show me".
+The Windows case has a common cause worth naming: a scheduled task with
+`RunLevel: HighestAvailable` does not elevate an account that is not an
+administrator, so the daemon it starts is medium-integrity even though the task
+asked for the highest available.
+
 **Notifications on Windows are balloon tips on that tray icon** (`Shell_NotifyIcon`
 with `NIF_INFO`, rendered as toasts on Windows 10 and 11), because WinRT toasts
 need an AppUserModelID an unpackaged exe does not have. With

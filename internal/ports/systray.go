@@ -66,4 +66,14 @@ type SystrayPort interface {
 
 	// AddSeparator appends a top-level divider.
 	AddSeparator()
+
+	// IconStatus reports whether the host is showing the tray icon, so a
+	// component can say so instead of leaving a running daemon with no visible
+	// sign of itself.
+	//
+	// nil means there is nothing to report: the icon is up, or the platform has
+	// no way to be refused. Windows has one, since the notification area can
+	// deny an unelevated process, and that refusal is the reason this is on the
+	// contract at all.
+	IconStatus() error
 }

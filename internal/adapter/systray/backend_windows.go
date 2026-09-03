@@ -16,6 +16,7 @@ var (
 	setTemplateIcon = windows.SetTemplateIcon
 	addMenuItem     = windows.AddMenuItem
 	addSeparator    = windows.AddSeparator
+	iconStatus      = windows.IconStatus
 )
 
 // Run starts the tray event loop and blocks until Quit.

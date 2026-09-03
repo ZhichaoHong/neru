@@ -16,6 +16,10 @@ var (
 	setTemplateIcon = darwin.SetTemplateIcon
 	addMenuItem     = darwin.AddMenuItem
 	addSeparator    = darwin.AddSeparator
+
+	// An NSStatusItem is granted by AppKit rather than requested from a shell
+	// that can refuse it, so there is no failure for the port to report.
+	iconStatus = func() error { return nil }
 )
 
 // Run starts the tray event loop and blocks until Quit.

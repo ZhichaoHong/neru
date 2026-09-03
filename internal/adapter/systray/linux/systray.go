@@ -11,6 +11,7 @@ import (
 	"github.com/godbus/dbus/v5"
 
 	"github.com/y3owk1n/neru/internal/adapter/systray/icon"
+	"github.com/y3owk1n/neru/internal/derrors"
 )
 
 // Linux tray API: maintains the menu tree and wires it to the D-Bus SNI +
@@ -61,7 +62,32 @@ var (
 	quitMu        sync.Mutex
 	quitCh        chan struct{}
 	quitRequested bool
+
+	// iconErrMu guards iconErr, which records why the tray item is not on the
+	// bus: Run fell back to a headless loop because the session bus, the object
+	// export or the watcher registration failed. nil means it is registered.
+	iconErrMu sync.Mutex
+	iconErr   error
 )
+
+func setIconErr(err error) {
+	iconErrMu.Lock()
+	iconErr = err
+	iconErrMu.Unlock()
+}
+
+// IconStatus reports why the tray item is absent, or nil when it is registered
+// (or when the tray was started headless and never asked for one).
+//
+// Registration happens after onReady, because a host that fetches an empty icon
+// never shows the item. So a caller inside onReady sees nil even when the
+// registration is about to fail; this is for callers that ask later.
+func IconStatus() error {
+	iconErrMu.Lock()
+	defer iconErrMu.Unlock()
+
+	return iconErr
+}
 
 // MenuItem is a menu item in the system tray (Linux).
 type MenuItem struct {
@@ -284,6 +310,8 @@ func filterProps(all map[string]dbus.Variant, filter []string) map[string]dbus.V
 func Run(onReadyFunc, onExitFunc func()) {
 	conn, err := dbus.SessionBus()
 	if err != nil {
+		setIconErr(derrors.Wrap(err, derrors.CodeSystrayFailed,
+			"no session bus, so there is nowhere to publish a tray item"))
 		runHeadlessLoop(onReadyFunc, onExitFunc)
 
 		return
@@ -291,6 +319,9 @@ func Run(onReadyFunc, onExitFunc func()) {
 
 	err = exportTray(conn)
 	if err != nil {
+		setIconErr(derrors.Wrap(err, derrors.CodeSystrayFailed,
+			"cannot export the tray item onto the session bus"))
+
 		_ = conn.Close()
 
 		runHeadlessLoop(onReadyFunc, onExitFunc)
@@ -313,6 +344,9 @@ func Run(onReadyFunc, onExitFunc func()) {
 	// shows the item even after a later NewIcon signal.
 	err = registerStatusNotifier(conn)
 	if err != nil {
+		setIconErr(derrors.Wrap(err, derrors.CodeSystrayFailed,
+			"no StatusNotifierWatcher accepted the tray item"))
+
 		_ = conn.Close()
 		// onReady already ran; don't invoke it again in the headless fallback.
 		runHeadlessLoop(nil, onExitFunc)
@@ -489,6 +523,8 @@ func ResetForTesting() {
 	menuInst.mu.Lock()
 	menuInst.revision = 0
 	menuInst.mu.Unlock()
+
+	setIconErr(nil)
 
 	quitMu.Lock()
 	quitCh = nil

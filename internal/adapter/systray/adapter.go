@@ -43,6 +43,11 @@ func (a *Adapter) AddSeparator() {
 	addSeparator()
 }
 
+// IconStatus reports whether the host is showing the tray icon.
+func (a *Adapter) IconStatus() error {
+	return iconStatus()
+}
+
 // menuItemAdapter adapts the backend *MenuItem to ports.SystrayMenuItem.
 //
 // It is a value type wrapping a pointer, so passing it around costs nothing and
