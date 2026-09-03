@@ -429,6 +429,22 @@ empty body by protocol rather than unfinished work, as is its Win32
 popup-menu twin. The macOS backend has no such method at all. Nothing a user
 can hover therefore differs between the three.
 
+**The host can refuse the icon, and two of the three do.** An `NSStatusItem` is
+granted by AppKit and always appears. The other two answer to something outside
+the process: `Shell_NotifyIconW(NIM_ADD)` returns FALSE when the notification
+area declines the caller — measured as `ERROR_ACCESS_DENIED` for a
+medium-integrity neru on a machine whose shell only accepts high-integrity ones,
+where the same binary run elevated is accepted — and an SNI item is invisible
+until some `StatusNotifierWatcher` registers it, which is why the Linux backend
+falls back to a headless loop. Neither is a bug neru can fix from inside, so
+`ports.SystrayPort.IconStatus` carries the refusal out and the tray component
+logs it at startup. Without that the symptom is an empty notification area,
+which reads as "neru did not start" rather than "the shell would not show me".
+The Windows case has a common cause worth naming: a scheduled task with
+`RunLevel: HighestAvailable` does not elevate an account that is not an
+administrator, so the daemon it starts is medium-integrity even though the task
+asked for the highest available.
+
 ¹⁰ **A `SendInput` mouse event has no modifier field either.** Windows reads the
 live key state when the event is dispatched and stamps it onto every message the
 target window gets, so the problem footnote ⁸ describes for X11 is the same one

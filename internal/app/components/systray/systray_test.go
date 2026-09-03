@@ -5,9 +5,13 @@ import (
 	"context"
 	"testing"
 
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 	"go.uber.org/zap/zaptest"
+	"go.uber.org/zap/zaptest/observer"
 
 	"github.com/y3owk1n/neru/internal/app/components/systray"
+	"github.com/y3owk1n/neru/internal/derrors"
 	"github.com/y3owk1n/neru/internal/domain"
 	portmocks "github.com/y3owk1n/neru/internal/ports/mocks"
 )
@@ -169,6 +173,48 @@ func TestComponent_OnReady_ShowsADistinctIconWhilePaused(t *testing.T) {
 
 	if bytes.Equal(running, paused) {
 		t.Error("the tray shows the same icon running and paused; the paused state is invisible")
+	}
+}
+
+// TestComponent_OnReady_ReportsARefusedIcon covers the case that leaves a user
+// with no evidence at all: the daemon runs, the menu is built, and the
+// notification area silently declined to show the icon. Windows does this to an
+// unelevated process, and neru used to throw the answer away, so the only
+// symptom was an empty tray.
+func TestComponent_OnReady_ReportsARefusedIcon(t *testing.T) {
+	core, logs := observer.New(zapcore.WarnLevel)
+
+	tray := &portmocks.MockSystrayPort{}
+	tray.SetIconStatus(derrors.New(
+		derrors.CodeSystrayFailed,
+		"the notification area refused the icon",
+	))
+
+	component := systray.NewComponent(&mockApp{}, tray, nil, zap.New(core))
+
+	component.OnReady()
+
+	t.Cleanup(component.OnExit)
+
+	if logs.Len() == 0 {
+		t.Fatal("OnReady() logged nothing about an icon the tray refused")
+	}
+}
+
+// TestComponent_OnReady_StaysQuietWhenTheIconIsShowing keeps the warning
+// truthful: every healthy start would otherwise carry it.
+func TestComponent_OnReady_StaysQuietWhenTheIconIsShowing(t *testing.T) {
+	core, logs := observer.New(zapcore.WarnLevel)
+
+	tray := &portmocks.MockSystrayPort{}
+	component := systray.NewComponent(&mockApp{}, tray, nil, zap.New(core))
+
+	component.OnReady()
+
+	t.Cleanup(component.OnExit)
+
+	if logs.Len() != 0 {
+		t.Errorf("OnReady() warned about a tray that accepted the icon: %v", logs.All())
 	}
 }
 

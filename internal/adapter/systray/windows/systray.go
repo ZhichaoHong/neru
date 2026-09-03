@@ -4,6 +4,7 @@ package windows
 
 import (
 	"bytes"
+	"errors"
 	"image"
 	"image/draw"
 	"image/png"
@@ -13,6 +14,7 @@ import (
 	"unsafe"
 
 	"github.com/y3owk1n/neru/internal/adapter/systray/icon"
+	"github.com/y3owk1n/neru/internal/derrors"
 )
 
 // Win32 notification-area (system tray) icon + popup menu via pure syscall.
@@ -182,12 +184,17 @@ var (
 	nextID        = 1
 	topNodes      []*menuNode
 
-	trayMu          sync.Mutex
-	trayHWND        uintptr
-	trayThreadID    uint32
-	trayQuit        bool
-	trayIconHandle  uintptr
-	trayNID         notifyIconData
+	trayMu         sync.Mutex
+	trayHWND       uintptr
+	trayThreadID   uint32
+	trayQuit       bool
+	trayIconHandle uintptr
+	trayNID        notifyIconData
+
+	// trayIconErr is what the notification area last said about the icon: nil
+	// once an add was accepted, the refusal otherwise. Guarded by trayMu.
+	trayIconErr error
+
 	taskbarCreated  uint32
 	wndProcCallback = syscall.NewCallback(trayWndProc)
 )
@@ -383,7 +390,10 @@ func SetTooltip(tooltip string) {
 
 	copyTip(&trayNID, tooltip)
 	trayNID.uFlags = nifMessage | nifIcon | nifTip
-	shellNotify(nimModify, &trayNID)
+	// A refused tooltip leaves the previous one in place, which is a cosmetic
+	// outcome the caller cannot act on. The add is the one that matters, and
+	// IconStatus reports that.
+	_ = shellNotify(nimModify, &trayNID)
 }
 
 // SetIcon replaces the tray icon with one built from the passed PNG bytes.
@@ -418,7 +428,7 @@ func SetIcon(iconBytes []byte) {
 	trayIconHandle = newIcon
 	trayNID.hIcon = newIcon
 	trayNID.uFlags = nifMessage | nifIcon | nifTip
-	shellNotify(nimModify, &trayNID)
+	_ = shellNotify(nimModify, &trayNID)
 
 	if oldIcon != 0 {
 		discardCall(procDestroyIcon.Call(oldIcon))
@@ -481,6 +491,10 @@ func ResetForTesting() {
 	menuItems = make(map[int]*MenuItem)
 	nextID = 1
 	topNodes = nil
+
+	trayMu.Lock()
+	trayIconErr = nil
+	trayMu.Unlock()
 }
 
 const (
@@ -582,7 +596,27 @@ func addTrayIcon() {
 		hIcon:            icon,
 	}
 	copyTip(&trayNID, "Neru")
-	shellNotify(nimAdd, &trayNID)
+
+	// No retry: a refusal here is a standing decision by the shell, not a
+	// transient one, and the one case where the icon can legitimately be added
+	// later — Explorer starting after neru — arrives as TaskbarCreated, which
+	// re-enters this function.
+	trayIconErr = shellNotify(nimAdd, &trayNID)
+}
+
+// IconStatus reports what the notification area said about the tray icon: nil
+// when it is showing, or when the tray is running headless and never asked for
+// one.
+//
+// A refusal is usually about the process rather than the request. An unelevated
+// neru is denied on machines whose notification area only accepts high-integrity
+// callers, which is what a task started with RunLevel HighestAvailable gets when
+// the account is not an administrator.
+func IconStatus() error {
+	trayMu.Lock()
+	defer trayMu.Unlock()
+
+	return trayIconErr
 }
 
 func removeTrayIcon() {
@@ -593,7 +627,9 @@ func removeTrayIcon() {
 		return
 	}
 
-	shellNotify(nimDelete, &trayNID)
+	// Nothing to report on the way out: the process is exiting either way, and
+	// an icon that was never accepted has nothing to delete.
+	_ = shellNotify(nimDelete, &trayNID)
 }
 
 // loadBrandIcon builds an HICON from the embedded brand PNG, falling back to
@@ -607,8 +643,51 @@ func loadBrandIcon() uintptr {
 	return icon
 }
 
-func shellNotify(message uint32, nid *notifyIconData) {
-	discardCall(procShellNotifyIconW.Call(uintptr(message), uintptr(unsafe.Pointer(nid))))
+// shellNotify sends one notification-area request and reports whether the shell
+// accepted it.
+//
+// Shell_NotifyIconW answers FALSE for a refusal and is not documented to set the
+// last error, so the errno is quoted as a hint when there is one and left out
+// when there is not.
+func shellNotify(message uint32, nid *notifyIconData) error {
+	ret, _, callErr := procShellNotifyIconW.Call(
+		uintptr(message),
+		uintptr(unsafe.Pointer(nid)),
+	)
+	if ret != 0 {
+		return nil
+	}
+
+	var errno syscall.Errno
+	if errors.As(callErr, &errno) && errno != 0 {
+		return derrors.Wrapf(
+			errno,
+			derrors.CodeSystrayFailed,
+			"the notification area refused %s",
+			shellRequestName(message),
+		)
+	}
+
+	return derrors.Newf(
+		derrors.CodeSystrayFailed,
+		"the notification area refused %s",
+		shellRequestName(message),
+	)
+}
+
+// shellRequestName names a NIM_* code, so the error says which request was
+// turned down rather than quoting a number the reader has to look up.
+func shellRequestName(message uint32) string {
+	switch message {
+	case nimAdd:
+		return "NIM_ADD"
+	case nimModify:
+		return "NIM_MODIFY"
+	case nimDelete:
+		return "NIM_DELETE"
+	default:
+		return "an unknown Shell_NotifyIconW request"
+	}
 }
 
 func pumpMessages() {
