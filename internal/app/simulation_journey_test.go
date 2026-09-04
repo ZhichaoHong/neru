@@ -599,17 +599,85 @@ func TestSimulation_HintsWithoutElements(t *testing.T) {
 }
 
 // TestSimulation_ExcludedApp covers the exclusion list: when the focused app
-// is excluded, no mode activates.
+// is excluded, the chord goes back to that application and no mode activates.
+//
+// Two readers answer "is this app excluded", and the journey asserts both,
+// because they used to be able to disagree. The binder releases the OS chord so
+// the application gets its own shortcut back; the mode handler refuses
+// activation for anything that reaches it anyway. A reload in either direction
+// has to move both, which is what the second half is for: with the list emptied
+// the chord comes back to Neru *and* the mode opens, and with it restored both
+// go the other way. Before general.excluded_apps had one reader, an emptied list
+// re-registered the chord while the handler kept refusing, so the keystroke
+// reached nobody at all.
 func TestSimulation_ExcludedApp(t *testing.T) {
-	sim := newSimHarness(t, simConfig(), threeButtons(t))
-	sim.ax.setExcluded(true)
+	const excludedApp = "excluded.app"
+
+	cfg := simConfig()
+	cfg.General.ExcludedApps = []string{excludedApp}
+
+	sim := newSimHarness(t, cfg, threeButtons(t))
+
+	canonicalHintsChord := config.CanonicalHotkeyForPlatform(hintsHotkey)
+
+	reloadExcluding := func(excludedApps string) {
+		t.Helper()
+
+		configPath := filepath.Join(t.TempDir(), "config.toml")
+
+		writeErr := os.WriteFile(configPath, fmt.Appendf(nil, `
+[general]
+excluded_apps = %s
+
+[hotkeys]
+%q = "hints"
+`, excludedApps, hintsHotkey), 0o600)
+		if writeErr != nil {
+			t.Fatalf("failed to write the reloaded config: %v", writeErr)
+		}
+
+		reloadErr := sim.app.ReloadConfig(context.Background(), configPath)
+		if reloadErr != nil {
+			t.Fatalf("ReloadConfig() error = %v", reloadErr)
+		}
+	}
+
+	expectExcluded := func(when string) {
+		t.Helper()
+
+		sim.waitFor("the chord released to the excluded app "+when, func() bool {
+			return sim.hotkeys.callbackFor(canonicalHintsChord) == nil
+		})
+
+		drawsBefore := sim.overlay.hintDrawCount()
+
+		// The chord is gone, so nothing can press it; ask for the mode through
+		// the entry point every user-driven activation shares (IPC, systray, a
+		// chord that got through), which is where the second reader sits.
+		sim.app.ActivateMode(domain.ModeHints)
+		sim.neverMode(domain.ModeHints, 250*time.Millisecond)
+
+		if sim.overlay.hintDrawCount() != drawsBefore {
+			t.Fatalf("hints were drawn for an excluded app %s", when)
+		}
+	}
+
+	sim.focusApp("Excluded", excludedApp)
+	expectExcluded("on the configuration the daemon started on")
+
+	reloadExcluding("[]")
 
 	sim.pressHotkey(hintsHotkey)
-	sim.neverMode(domain.ModeHints, 250*time.Millisecond)
+	sim.waitMode(domain.ModeHints)
+	sim.waitFor("hints drawn once the app is no longer excluded", func() bool {
+		return sim.overlay.hintDrawCount() > 0
+	})
 
-	if sim.overlay.hintDrawCount() != 0 {
-		t.Fatal("hints must not be drawn for an excluded app")
-	}
+	sim.press("Escape")
+	sim.waitMode(domain.ModeIdle)
+
+	reloadExcluding(fmt.Sprintf("[%q]", excludedApp))
+	expectExcluded("after the list was restored by a reload")
 }
 
 const recursiveGridHotkey = "Primary+Shift+C"

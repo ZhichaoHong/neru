@@ -4,7 +4,6 @@ import (
 	"context"
 	"image"
 	"runtime"
-	"slices"
 	"sync"
 	"time"
 
@@ -14,7 +13,6 @@ import (
 	"github.com/y3owk1n/neru/internal/adapter/accessibility/native"
 	"github.com/y3owk1n/neru/internal/derrors"
 	"github.com/y3owk1n/neru/internal/domain/action"
-	"github.com/y3owk1n/neru/internal/domain/appidentity"
 	"github.com/y3owk1n/neru/internal/domain/element"
 	"github.com/y3owk1n/neru/internal/ports"
 )
@@ -58,24 +56,26 @@ var elementSlicePool = sync.Pool{
 type Adapter struct {
 	logger               *zap.Logger
 	client               ax.Client
-	excludedBundles      []string
-	clickableRoles       []string
 	detectMissionControl bool
 }
 
 // NewAdapter creates a new accessibility adapter.
+//
+// detectMissionControl is the one configuration value the adapter still holds,
+// and it is held for construction only: nothing propagates a reload to it. That
+// is the same defect general.excluded_apps had, narrowed to a macOS-only option,
+// and it is still open. Do not close it with a setter here - the copy
+// general.excluded_apps kept had one, and having one is what nobody remembered
+// to call. The live readers are lifecycle.go:238,251; the fix is for this to
+// read what they read.
 func NewAdapter(
 	logger *zap.Logger,
-	excludedBundles []string,
-	clickableRoles []string,
 	client ax.Client,
 	detectMissionControl bool,
 ) *Adapter {
 	return &Adapter{
 		logger:               logger,
 		client:               client,
-		excludedBundles:      slices.Clone(excludedBundles),
-		clickableRoles:       clickableRoles,
 		detectMissionControl: detectMissionControl,
 	}
 }
@@ -83,11 +83,6 @@ func NewAdapter(
 // Logger returns the logger for the adapter.
 func (a *Adapter) Logger() *zap.Logger {
 	return a.logger
-}
-
-// ClickableRoles returns the list of clickable roles.
-func (a *Adapter) ClickableRoles() []string {
-	return a.clickableRoles
 }
 
 // ClickableElements retrieves all clickable UI elements matching the filter.
@@ -269,13 +264,6 @@ func (a *Adapter) FocusedAppBundleID(ctx context.Context) (string, error) {
 	return bundleID, nil
 }
 
-// IsAppExcluded checks if the given bundle ID is in the exclusion list.
-// Matching follows [appidentity.Matches], so it agrees with the `bundle_id`
-// lookups in internal/config rather than being stricter than them.
-func (a *Adapter) IsAppExcluded(_ context.Context, bundleID string) bool {
-	return appidentity.MatchesAny(a.excludedBundles, bundleID)
-}
-
 // ReleaseHeldButtons releases any mouse button this process still holds down.
 func (a *Adapter) ReleaseHeldButtons(ctx context.Context) error {
 	err := a.checkContext(ctx)
@@ -315,18 +303,12 @@ func (a *Adapter) Health(ctx context.Context) error {
 	return nil
 }
 
-// UpdateClickableRoles updates the list of clickable roles.
+// UpdateClickableRoles updates the list of clickable roles. The client's
+// vocabulary is the one store: a collection reads it there (adapter_supplementary.go)
+// or takes the roles from the filter it was handed, never from a field here.
 func (a *Adapter) UpdateClickableRoles(roles []string) {
 	a.logger.Debug("Updating clickable roles", zap.Int("count", len(roles)))
-	a.clickableRoles = roles
 	a.client.SetClickableRoles(roles)
-}
-
-// UpdateExcludedBundles updates the list of excluded bundle IDs.
-func (a *Adapter) UpdateExcludedBundles(bundles []string) {
-	a.logger.Debug("Updating excluded bundles", zap.Int("count", len(bundles)))
-
-	a.excludedBundles = slices.Clone(bundles)
 }
 
 // checkContext checks if the context is canceled and returns an error if so.
