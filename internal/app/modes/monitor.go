@@ -403,6 +403,17 @@ func (h *handlerState) refreshHintsForMonitorMove(
 	generateCtx, cancelGenerate := context.WithTimeout(ctx, HintTimeout)
 	defer cancelGenerate()
 
+	// A monitor move widens the session to the whole target monitor, set before
+	// the overrides are read below so the re-scan sees it. The cursor moved and
+	// the focused window did not: left window-scoped, the re-scan would describe
+	// a window on the display just left and filterHintsForScreen would discard
+	// every hint of it, emptying the monitor the user asked to look at.
+	//
+	// Sticky and one-way, the same shape as the expand action's override —
+	// cycling back to the starting monitor stays screen-scoped, and Reset clears
+	// it when the mode exits.
+	h.hints.Context.SetScopeOverride(domain.HintScopeScreen)
+
 	filterRoles := h.hints.Context.FilterRoles()
 	filterTextContains := h.hints.Context.FilterTextContains()
 	strategyOverride := h.hints.Context.StrategyOverride()
@@ -435,8 +446,7 @@ func (h *handlerState) refreshHintsForMonitorMove(
 	}
 
 	if len(domainHints) == 0 {
-		h.logger.Warn("No hints generated on target monitor; exiting hints mode")
-		h.exitMode()
+		h.holdHintsOnEmptyMonitor(targetBounds, "the target monitor produced no hints")
 
 		return
 	}
@@ -446,8 +456,7 @@ func (h *handlerState) refreshHintsForMonitorMove(
 
 	filtered := filterHintsForScreen(domainHints, targetBounds)
 	if len(filtered) == 0 {
-		h.logger.Warn("All hints filtered out on target monitor; exiting hints mode")
-		h.exitMode()
+		h.holdHintsOnEmptyMonitor(targetBounds, "every hint fell outside the target monitor")
 
 		return
 	}
@@ -471,4 +480,46 @@ func (h *handlerState) refreshHintsForMonitorMove(
 	// SetHints fires the hint manager's update callback, which hands the
 	// labels over as a Frame — and since the frame was cleared before the
 	// warp, that first draw is the transition that brings the overlay back up.
+}
+
+// holdHintsOnEmptyMonitor keeps a hints session alive on a monitor that has
+// nothing to label, drawing no labels rather than leaving the mode.
+//
+// Cycling monitors is a sweep and a bare display is an expected stop on it.
+// Exiting there would drop the user out of hints for pressing the key one time
+// too many, and worse, leave no way to carry on to the monitor after it. The
+// session stays open so the next press moves on. Failures that will not come
+// back with labels on any display — no hint service, an accessibility walk that
+// errors — still exit; this is the empty answer only.
+//
+// A screen-reading pass that fails arrives here rather than at the exit, because
+// the hint service deliberately logs and notifies its own failures and returns
+// what it has instead of erroring (`internal/app/services/hint_service.go`). That
+// is the right landing: it is reported already, and it may read the next display
+// fine.
+//
+// Clearing goes through SetHints rather than ClearVisibleHints deliberately: the
+// source collection has to go with the visible one, or a `/` search would filter
+// the labels of the display just left and select one, clicking on a monitor the
+// user is no longer looking at.
+func (h *handlerState) holdHintsOnEmptyMonitor(
+	targetBounds image.Rectangle,
+	reason string,
+) {
+	h.logger.Debug("Holding hints session on a monitor with no hints",
+		zap.String("reason", reason),
+	)
+
+	h.setScreenBounds(targetBounds)
+
+	h.hintsFrameOnScreen = false
+
+	setHintsErr := h.hints.Context.SetHints(domainHint.NewCollection(nil))
+	if setHintsErr != nil {
+		h.logger.Error(
+			"Failed to clear hints on an empty monitor",
+			zap.Error(setHintsErr),
+		)
+		h.exitMode()
+	}
 }

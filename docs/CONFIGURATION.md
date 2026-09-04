@@ -583,6 +583,7 @@ All actions available in hotkeys. These also work as `neru action <name>` — se
 | Page        | `page_up`, `page_down`, `go_top`, `go_bottom`                                          |
 | Keyboard    | `feed`                                                                                 |
 | Hints       | `search_hints`, `cycle_hint`, `cycle_hint --backward`, `expand_hint_scope`              |
+| Monitor     | `move_monitor`, `move_monitor --previous`, `move_monitor --name <display>`              |
 | Delay       | `sleep <duration>` — plain numbers are seconds (`0.5`), explicit units: `500ms`, `1s`  |
 | Mode        | `reset`, `backspace`, `move_cell --direction <dir>`                                    |
 | Composition | `wait_for_mode_exit` (with optional `--bail`), `save_cursor_pos`, `restore_cursor_pos` |
@@ -596,6 +597,7 @@ All actions available in hotkeys. These also work as `neru action <name>` — se
 - `scroll_up` / `scroll_down` support `--steps` (e.g. `"action scroll_down --steps 200"`) to override `scroll_step` (see [CLI.md](CLI.md#neru-action-scroll_up-scroll_down-scroll_left-scroll_right))
 - `move_cell` slides the grid or recursive-grid selection to a neighbouring cell on the same layer, e.g. `"action move_cell --direction=right"`. It takes an optional `--count`, and repeats while the key is held when [`[held_repeat]`](#held_repeat) is enabled (see [CLI.md](CLI.md#neru-action-move_cell))
 - `expand_hint_scope` widens the running hints session to the whole active monitor and re-scans, for the times the control you wanted is in a window behind the focused one. Bound to `=` by default. It needs a strategy that reads the screen; under `axtree` there is nothing to widen. See [Hint scope](#hint-scope)
+- `move_monitor` warps the cursor to the next connected display, or the previous one with `--previous`, or a named one with `--name`. Whatever mode is open follows it: a grid replans for the new display, and a hints session re-scans there. Bound to `]` and `[` in hints mode by default, where it doubles as a way to sweep the desk for a control — see [Sweeping other monitors](#sweeping-other-monitors)
 - `reset`, `backspace`, `move_cell`, `search_hints`, `cycle_hint`, `expand_hint_scope`, `sleep`, `wait_for_mode_exit`, `save_cursor_pos`, `restore_cursor_pos`, `hide_cursor`, and `show_cursor` are not valid mode `--action` values — use `neru action ...` or in hotkeys as `"action ..."`
 - `sleep` is the exception among those: it works only in hotkey bindings (`"action sleep 0.5"`), **not** as a terminal command, and it cannot appear in a comma-separated chain. See [CLI.md](CLI.md#action-sleep-hotkey-bindings-only)
 
@@ -1107,6 +1109,24 @@ One way, and sticky. There is no narrowing counterpart, and the expansion holds 
 ```toml
 [hints.hotkeys]
 "=" = "action expand_hint_scope"
+```
+
+#### Sweeping other monitors
+
+`move_monitor` is not a hints action, but bound inside hints mode it becomes one: the cursor moves to the next display and the session re-scans there. `]` and `[` carry it by default, forward and backward through the same monitor order `monitor_select` uses, wrapping at both ends - so on a two-monitor desk `]` twice returns you home.
+
+A monitor move widens the session to screen scope, whether or not you pressed `=` first. That is not a convenience, it is the only thing that works: warping the cursor does not change which window is focused, so a window-scoped re-scan would describe the window on the display you just left and every label of it would be discarded for falling outside the new monitor. The widening is sticky like `=`, so cycling back to where you started leaves you screen-scoped.
+
+Two things follow from focus staying put. Labels on the other monitor come from the screen-reading half only - under `hybrid` the accessibility walk still describes the window you left, and its hints are filtered out - so expect vision-quality labels there rather than tree-quality ones. And each press pays a whole-monitor scan, a few hundred milliseconds on a 4K display, so sweeping four monitors costs about a second of scanning.
+
+On a single-monitor machine there is nowhere to go, so the key logs a failure and leaves the session exactly as it was.
+
+Landing on a monitor with nothing to label does not end the session. The labels clear and the mode stays open, so the next press carries on to the display after it. A screen-reading pass that fails outright holds the same way, since it reports itself separately and may well work on the next display. What does drop you out is a failure that will not come back with labels wherever you go - an accessibility walk that errors, a hint service that is gone.
+
+```toml
+[hints.hotkeys]
+"]" = "action move_monitor"
+"[" = "action move_monitor --previous"
 ```
 
 ### Choosing a label direction
