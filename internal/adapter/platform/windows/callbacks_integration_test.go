@@ -189,3 +189,52 @@ func TestStartKeyboardHook_RegistersOneCallbackForTheProcess(t *testing.T) {
 		)
 	}
 }
+
+// TestStartFocusWatcher_RegistersCallbacksOnceForTheProcess holds the focus
+// watcher to its two callback registrations across start cycles.
+//
+// This path registers more than the other two — a WINEVENTPROC and the hidden
+// window's WNDPROC — and the app watcher restarts it on every daemon
+// enable/disable cycle, so it is the same countdown twice over. What keeps one of
+// each serving every start is that neither procedure holds per-watcher state:
+// both load activeFocusWatcher. A refactor that moved either syscall.NewCallback
+// inside run would still pass every other test in the package.
+//
+// Delivery is not asserted here. WINEVENT_SKIPOWNPROCESS drops the events our own
+// windows raise, so a test cannot hand itself a foreground change to observe; that
+// the hook installs and fires is verified by running the daemon.
+func TestStartFocusWatcher_RegistersCallbacksOnceForTheProcess(t *testing.T) {
+	warmUp, err := StartFocusWatcher()
+	if err != nil {
+		t.Skipf("skipping: cannot install a foreground hook here (%v)", err)
+	}
+
+	warmUp.Stop()
+
+	var startErr error
+
+	registered := countCallbackRegistrations(t, func() {
+		for range callbackWorkloadRuns {
+			watcher, err := StartFocusWatcher()
+			if err != nil {
+				startErr = err
+
+				return
+			}
+
+			watcher.Stop()
+		}
+	})
+
+	if startErr != nil {
+		t.Fatalf("starting a focus watcher after a successful first start: %v", startErr)
+	}
+
+	if registered != 0 {
+		t.Fatalf(
+			"%d start cycles registered %d callbacks; each one is a slot the process "+
+				"never gets back",
+			callbackWorkloadRuns, registered,
+		)
+	}
+}

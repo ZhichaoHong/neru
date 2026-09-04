@@ -15,8 +15,11 @@ type AppCallback = ports.AppEventCallback
 
 // Watcher monitors application lifecycle events and dispatches them to registered callbacks.
 // It tracks application launches, terminations, activations, deactivations, and screen changes.
-// On macOS events come from the NSWorkspace observer via the platform dispatch layer.
-// On other platforms the watcher is a no-op until platform support is implemented.
+// Events come from the platform dispatch layer: the NSWorkspace observer on
+// macOS, the compositor's or X11's focus-change signal on Linux, a foreground
+// win-event hook on Windows. Launch, termination and Mission Control are macOS
+// only; the other two backends report activation, deactivation and screen
+// changes, so those callbacks simply never fire there.
 type Watcher struct {
 	mu sync.RWMutex
 	// Callbacks for different events

@@ -174,8 +174,13 @@ func WindowsCapabilities() PlatformCapabilities {
 		KeyboardEventTap: supportedCapability(
 			"keyboard event tap available via WH_KEYBOARD_LL hook",
 		),
-		AppWatcher: stubCapability(
-			"app watcher not implemented yet; target Win32 foreground-window notifications",
+		AppWatcher: supportedCapability(
+			"focused-app change detection keyed on the executable path, event-driven " +
+				"via a SetWinEventHook(EVENT_SYSTEM_FOREGROUND) with a periodic " +
+				"re-sample so a coalesced or missed event self-heals; deactivate is " +
+				"synthesized from the previous foreground, display changes arrive as " +
+				"WM_DISPLAYCHANGE, and app launch, termination and Mission Control " +
+				"never fire",
 		),
 		DarkModeDetection: supportedCapability(
 			"dark mode detection available via the Windows personalization registry " +

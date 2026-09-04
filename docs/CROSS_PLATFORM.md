@@ -170,10 +170,10 @@ that is what [Known Gaps](#known-gaps) tracks, per
 | Capability                    | macOS                    | Linux X11              | Linux Wayland (wlroots)      | Linux Wayland (KDE)     | Windows                      |
 | ----------------------------- | ------------------------ | ---------------------- | ---------------------------- | ----------------------- | ---------------------------- |
 | **Screen bounds / enumeration** | ✅ Cocoa               | ✅ XRandR              | ✅ xdg-output                | ✅ xdg-output           | ✅ `EnumDisplayMonitors`     |
-| **Display hotplug events**    | ✅ screen-params notif.  | ✅ RandR event fd      | ✅ `wl_output` events        | ✅ `wl_output` events   | 🟡                           |
+| **Display hotplug events**    | ✅ screen-params notif.  | ✅ RandR event fd      | ✅ `wl_output` events        | ✅ `wl_output` events   | ✅ `WM_DISPLAYCHANGE`        |
 | **Focused app identity**      | ✅ NSWorkspace + AX      | ✅ `_NET_ACTIVE_WINDOW` / `WM_CLASS` | ⚠️ app_id only (see below) | ⚠️ app_id only     | ✅ `GetForegroundWindow`     |
-| **App watcher (focus change)**| ✅ NSWorkspace observer  | ✅ event-driven        | ✅ event-driven              | ✅ event-driven         | 🟡                           |
-| **Keymap learns the focused app** | ✅ published by the watcher | ✅ published by the watcher | ✅ published by the watcher | ✅ published by the watcher | ⚠️ asked when the keymap settles ¹ |
+| **App watcher (focus change)**| ✅ NSWorkspace observer  | ✅ event-driven        | ✅ event-driven              | ✅ event-driven         | ✅ `SetWinEventHook` ¹²       |
+| **Keymap learns the focused app** ¹ | ✅ published by the watcher | ✅ published by the watcher | ✅ published by the watcher | ✅ published by the watcher | ✅ published by the watcher |
 | **Cursor position**           | ✅ `CGEventGetLocation`  | ✅ `XQueryPointer`     | ✅ compositor IPC (Hyprland) / sync-surface trick | ✅ sync-surface trick | ✅ `GetCursorPos` |
 | **Cursor move**               | ✅ `CGEventPost` ([`postMouseMoveLocked`](../internal/adapter/platform/darwin/accessibility_mouse_darwin.m)) | ✅ XTest (`XTestFakeMotionEvent`) | ✅ `zwlr_virtual_pointer` | ✅ libei                | ✅ `SetCursorPos`            |
 | **Mouse buttons / drag**      | ✅ `CGEventPost`         | ✅ XTest ⁸             | ✅ `zwlr_virtual_pointer`    | ✅ libei                | ✅ `SendInput` ¹⁰            |
@@ -203,12 +203,12 @@ that is what [Known Gaps](#known-gaps) tracks, per
 ¹ Per-app hotkey overrides need to know which application is focused. Where the
 app watcher fires, it publishes that identity to the mode handler and the keymap
 is re-settled from it, so switching applications mid-mode changes what the next
-key does; the platform is asked at most until the watcher first fires. Windows
-has no watcher, so the keymap asks each time it settles — which means overrides
-there settle **when the mode opens** rather than the instant you switch apps.
-The same applies to a Linux session whose compositor exposes no focused-app
-source (GNOME/Mutter). No platform is asked on a keystroke; ADR 0005 has the
-reasoning.
+key does; the platform is asked at most until the watcher first fires. Every
+column of this table has a watcher. A Linux session whose compositor exposes no
+focused-app source at all (GNOME/Mutter) is the case that does not, and there the
+keymap asks each time it settles — which means overrides settle **when the mode
+opens** rather than the instant you switch apps. No platform is asked on a
+keystroke; ADR 0005 has the reasoning.
 
 ² macOS and Linux resolve font *families* through the OS (NSFont, fontconfig).
 Windows only maps the generic aliases `sans` / `serif` / `mono` to Segoe UI /
@@ -509,6 +509,23 @@ not a clickable role, so the text is found and then gets no hint at all. Measure
 on a Notepad window: 8 hints against 20 with the gate off, with every label under
 roughly five characters wide gone, `File` included.
 
+¹² **The Windows watcher reports that focus moved, never what moved into it.**
+`SetWinEventHook(EVENT_SYSTEM_FOREGROUND)` fires on the installing thread's
+message queue, and the dispatcher re-queries `FocusedApplicationIdentity` rather
+than reading the HWND the event carried — so one identity serves the keymap, the
+per-app hotkey tables and `general.excluded_apps`, and a burst of switches
+coalesces into the one that stuck. Deactivate is synthesized by remembering the
+previous foreground: Windows has no counterpart notification. A 3-second
+re-sample runs alongside the hook, so a coalesced or missed event self-heals and
+a session where the hook cannot be installed degrades to polling instead of going
+silent.
+
+Two events the other backends have do not exist here. **App launch and
+termination never fire** — nothing consumes them, and adding them would mean a
+WMI subscription or a process-poll for no current caller. **Mission Control is a
+macOS concept**, so `hints.detect_mission_control` and its two hooks are declared
+macOS-only in the parity registry rather than silently doing nothing.
+
 The Windows default is therefore `0` rather than the shared default. It is a
 default and not a clamp: a config that raises it is honored, measured at 82-92% of
 Buttons lost, and left alone. `configs/default-config.toml` leaves the option
@@ -571,6 +588,19 @@ watches a display-configuration fd and dispatches screen-parameter changes, so
 monitor hotplug regenerates overlays like it does on macOS. Only
 activate/deactivate/screen-params are emitted; launch, terminate, and Mission
 Control events remain macOS-only.
+
+Windows takes the same shape from a different API. `SetWinEventHook` with
+`EVENT_SYSTEM_FOREGROUND` posts to the installing thread's message queue, so
+`platform/windows/focus_watcher.go` owns a locked OS thread that installs the
+hook, pumps for it, and hosts the hidden top-level window `WM_DISPLAYCHANGE` is
+broadcast to — a message-only window receives no broadcasts, which is why that
+window is a never-shown `WS_POPUP` rather than an `HWND_MESSAGE` child. The hook
+reports only that foreground moved; `appwatcher/platform_windows.go` re-queries
+the identity, which is the **executable path**, drops events raised by our own
+process, and synthesizes the deactivate from the previous foreground. Same 3s
+safety re-sample as Linux, and a failed hook install degrades to that re-sample
+alone rather than going silent. Launch, terminate and Mission Control are not
+emitted, as on Linux.
 
 **Global hotkeys on Wayland.** No Wayland protocol lets an ordinary client
 register a global hotkey, so Neru reads `/dev/input/event*` directly with a
@@ -1377,20 +1407,22 @@ working, which is exactly why the build exists.
 
 **Windows**
 
-1. App watcher — no foreground-window change notifications, so per-app config never re-applies
-2. Display hotplug — no screen-parameter change events
-3. Native notifications — no toast support
-4. UIA tree depth — shallow walk; complex apps under-report clickable elements
-5. Grid and recursive-grid transition animation — not implemented
-6. Grid virtual-pointer indicator — a no-op, while recursive grid draws it.
+1. App watcher — activate, deactivate and screen-parameter changes only. App
+   launch and termination never fire, so nothing keyed on a process appearing or
+   going away works here; Mission Control is macOS-only by definition and its
+   options are declared so
+2. Native notifications — no toast support
+3. UIA tree depth — shallow walk; complex apps under-report clickable elements
+4. Grid and recursive-grid transition animation — not implemented
+5. Grid virtual-pointer indicator — a no-op, while recursive grid draws it.
    `virtual_pointer.ui.*` is therefore partly inert here rather than wholly, so
    it stays declared everywhere and is tracked as this entry instead
-7. Smooth cursor and smooth scroll animation — not implemented
-8. Modifier passthrough and `PostModifierEvent` — no-ops
-9. Font resolution — alias mapping only, no system font enumeration
-10. `neru services` — every subcommand returns `CodeNotSupported`, where macOS
-    installs a launchd agent and Linux a systemd user unit
-11. IPC endpoint, client side — the daemon's endpoint is scoped to one user on
+6. Smooth cursor and smooth scroll animation — not implemented
+7. Modifier passthrough and `PostModifierEvent` — no-ops
+8. Font resolution — alias mapping only, no system font enumeration
+9. `neru services` — every subcommand returns `CodeNotSupported`, where macOS
+   installs a launchd agent and Linux a systemd user unit
+10. IPC endpoint, client side — the daemon's endpoint is scoped to one user on
     every platform, but only the Unix client checks that for itself before
     connecting. A named pipe carries no ownership a client can read without
     opening it, so the Windows CLI trusts the name it derives from its own SID.

@@ -74,6 +74,16 @@ exit included, since it takes the same lock.
   about focus instead of asking. One `resolveFocusedApp` covers both: read the
   cell when it is fed, ask when it is not. `docs/CROSS_PLATFORM.md` gains the
   row.
+
+  *2026-09-04*: Windows has a watcher now — a
+  `SetWinEventHook(EVENT_SYSTEM_FOREGROUND)` in
+  `platform/windows/focus_watcher.go`, dispatched by
+  `appwatcher/platform_windows.go` — so it publishes like the other two and asks
+  only until the hook first fires. The decision is unchanged and the
+  affordability argument above still holds for the ask that remains; what has
+  narrowed is where it is the *only* answer, which is now a session whose
+  compositor exposes no focus source at all (GNOME/Mutter). `other` still gets
+  the empty slot.
 - **Publishing only works while something is listening, so the order the daemon
   starts in became load-bearing.** Polling was self-healing: whoever asked got
   an answer, however late they asked. A publication has one delivery and no

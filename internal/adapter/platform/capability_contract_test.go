@@ -269,7 +269,9 @@ func TestCapabilities_ProbeCoverageIsDocumented(t *testing.T) {
 		ports.CapabilityGlobalHotkeys: "registration mutates global OS state",
 		ports.CapabilityKeyboardEventTap: "installing a tap mutates global OS state; " +
 			"covered by internal/adapter/eventtap",
-		ports.CapabilityAppWatcher:        "requires a focus change to observe",
+		ports.CapabilityAppWatcher: "requires a focus change to observe, which a test cannot " +
+			"cause for itself — the Windows hook drops our own process's events; the " +
+			"dispatch logic is covered by internal/adapter/appwatcher",
 		ports.CapabilityDarkModeDetection: "IsDarkMode returns no error, so NotSupported is unobservable",
 		ports.CapabilityTextInput:         "needs a live overlay window",
 		ports.CapabilityVision:            "a probe would trigger a screen-capture permission prompt",
