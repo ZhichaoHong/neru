@@ -102,11 +102,7 @@ func initializeAdapters(
 		app.axClient = axClient
 
 		// Create base accessibility adapter with core functionality
-		accAdapter = accessibilityAdapter.NewAdapter(
-			logger,
-			axClient,
-			cfg.Hints.DetectMissionControl,
-		)
+		accAdapter = accessibilityAdapter.NewAdapter(logger, axClient)
 	}
 
 	// Respect an injected overlay port (WithOverlayPort) the same way: a caller

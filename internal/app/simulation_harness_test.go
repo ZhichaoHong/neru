@@ -635,6 +635,29 @@ func (m *simOverlayPort) lastHintLabels() []string {
 	return labels
 }
 
+// lastHintElementIDs returns the IDs of the elements the most recent hints frame
+// labelled, sorted, so a journey can state which part of the desktop was hinted
+// rather than only how many labels appeared.
+func (m *simOverlayPort) lastHintElementIDs() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if len(m.hintFrames) == 0 {
+		return nil
+	}
+
+	last := m.hintFrames[len(m.hintFrames)-1]
+
+	ids := make([]string, 0, len(last.Hints))
+	for _, h := range last.Hints {
+		ids = append(ids, string(h.Element().ID()))
+	}
+
+	slices.Sort(ids)
+
+	return ids
+}
+
 // lastHintScreen returns the display the most recent hints frame was drawn
 // against, and whether one was ever drawn. A screen change is only complete
 // when this is the display the user is now looking at.
@@ -784,21 +807,46 @@ type simAXPort struct {
 	// it is stating what a keystroke costs rather than describing it.
 	focusedApp        string
 	focusedAppQueries int
+
+	// missionControlUp is whether the fixture desktop has Mission Control open,
+	// covering the frontmost window the way it does on macOS, and dockElements is
+	// what is still reachable while it is - config validation ties
+	// hints.detect_mission_control to hints.include_dock_hints for exactly that
+	// reason.
+	missionControlUp bool
+	dockElements     []*element.Element
 }
 
 var _ ports.AccessibilityPort = (*simAXPort)(nil)
 
 func (a *simAXPort) Health(_ context.Context) error { return nil }
 
+// ClickableElements serves the fixture tree, or the dock alone when the filter
+// says this collection detects Mission Control and the desktop switcher is up.
+//
+// Mission Control is honoured here rather than ignored because it belongs to the
+// port's contract, not to the macOS adapter's implementation: a collection that
+// detects it skips the frontmost window, since what a window scan finds there is
+// whatever the switcher is covering. A fake that served the tree regardless would
+// let a journey pass over a daemon hinting a window the user cannot see.
 func (a *simAXPort) ClickableElements(
 	_ context.Context,
-	_ ports.ElementFilter,
+	filter ports.ElementFilter,
 ) ([]*element.Element, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	out := make([]*element.Element, len(a.elements))
-	copy(out, a.elements)
+	served := a.elements
+	if a.missionControlUp && filter.DetectMissionControl {
+		served = nil
+
+		if filter.IncludeDock {
+			served = a.dockElements
+		}
+	}
+
+	out := make([]*element.Element, len(served))
+	copy(out, served)
 
 	return out, nil
 }
@@ -874,6 +922,17 @@ func (a *simAXPort) setElements(elements []*element.Element) {
 	defer a.mu.Unlock()
 
 	a.elements = elements
+}
+
+// openMissionControl leaves the fixture desktop with Mission Control covering
+// the frontmost window, with the given dock items as what a collection that
+// detects it can still reach.
+func (a *simAXPort) openMissionControl(dock ...*element.Element) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	a.missionControlUp = true
+	a.dockElements = dock
 }
 
 // setFocusedApp changes which application the fixture desktop reports as

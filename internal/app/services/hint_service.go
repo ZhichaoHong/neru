@@ -734,6 +734,7 @@ func (s *HintService) hintFilter(
 	filter.IncludeStageManager = cfg.IncludeStageManagerHints
 	filter.IncludePIP = cfg.IncludePIPHints
 	filter.IncludeScreenCapture = cfg.IncludeScreenCaptureHints
+	filter.DetectMissionControl = cfg.DetectMissionControl
 
 	// Text filter: an element matches when any term matches.
 	//

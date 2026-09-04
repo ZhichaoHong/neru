@@ -128,6 +128,18 @@ type ElementFilter struct {
 	// Platform equivalents on Linux/Windows are not yet mapped.
 	IncludeScreenCapture bool
 
+	// DetectMissionControl asks the backend whether Mission Control is up
+	// before it collects, so a collection made while it is open skips the
+	// frontmost window it would otherwise scan behind. macOS-only in effect;
+	// elsewhere nothing reports Mission Control active and the answer is always
+	// no.
+	//
+	// It rides the filter rather than being held by the backend because it is
+	// hints.detect_mission_control, and configuration is answered by whatever a
+	// reload last installed. The adapter held a copy taken at construction, and
+	// that copy was stale for the whole life of the daemon.
+	DetectMissionControl bool
+
 	// TitleContains filters elements whose title contains this substring (case-insensitive).
 	TitleContains string
 
