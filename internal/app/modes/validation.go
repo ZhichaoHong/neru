@@ -20,6 +20,10 @@ const (
 // validateModeActivation performs common validation checks before mode activation.
 // Returns an error if the mode cannot be activated.
 // If bundleID is non-empty, it is used directly for exclusion check (skips AX call).
+//
+// The exclusion list comes from h.config, which is what a reload replaces, so
+// this reader and the one that releases the chord (keybinding/binder.go:500)
+// answer from the same configuration rather than from two copies of it.
 func (h *handlerState) validateModeActivation(
 	bundleID string,
 	modeName string,
@@ -55,23 +59,38 @@ func (h *handlerState) validateModeActivation(
 		return derrors.Newf(derrors.CodeInvalidInput, "mode %s is disabled", modeName)
 	}
 
-	if bundleID != "" {
-		if h.actionService.IsAppExcluded(h.ctx, bundleID) {
-			return derrors.New(derrors.CodeInvalidInput, "focused app is excluded")
-		}
-	} else {
-		ctx, cancel := context.WithTimeout(h.ctx, ValidationTimeout)
-		defer cancel()
-
-		isExcluded, isExcludedErr := h.actionService.IsFocusedAppExcluded(ctx)
-		if isExcludedErr != nil {
-			h.logger.Warn("Failed to check if app is excluded", zap.Error(isExcludedErr))
-		} else if isExcluded {
-			return derrors.New(derrors.CodeInvalidInput, "focused app is excluded")
-		}
+	if h.config != nil && h.config.IsAppExcluded(h.focusedAppForExclusionCheck(bundleID)) {
+		return derrors.New(derrors.CodeInvalidInput, "focused app is excluded")
 	}
 
 	return nil
+}
+
+// focusedAppForExclusionCheck returns the application identity to match against
+// general.excluded_apps: the one the caller already knows, or the platform's
+// answer when it does not.
+//
+// An unresolvable focused app returns empty, which IsAppExcluded reads as not
+// excluded. That fail-open matches the binder (keybinding/binder.go:478): a
+// desktop that cannot say who has focus - Wayland with no focus-query API -
+// must not leave every mode unopenable.
+func (h *handlerState) focusedAppForExclusionCheck(bundleID string) string {
+	if bundleID != "" || h.actionService == nil {
+		return bundleID
+	}
+
+	ctx, cancel := context.WithTimeout(h.ctx, ValidationTimeout)
+	defer cancel()
+
+	focused, focusedErr := h.actionService.FocusedAppBundleID(ctx)
+	if focusedErr != nil {
+		h.logger.Warn("Failed to resolve the focused app for the exclusion check",
+			zap.Error(focusedErr))
+
+		return ""
+	}
+
+	return focused
 }
 
 // prepareForModeActivation performs common preparation steps before activating a mode.

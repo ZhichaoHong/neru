@@ -769,7 +769,6 @@ type simClick struct {
 type simAXPort struct {
 	mu             sync.Mutex
 	elements       []*element.Element
-	excluded       bool
 	clicks         []simClick
 	elementActions []action.Type
 	scrolls        []image.Point
@@ -864,13 +863,6 @@ func (a *simAXPort) FocusedAppBundleID(_ context.Context) (string, error) {
 	return a.focusedApp, nil
 }
 
-func (a *simAXPort) IsAppExcluded(_ context.Context, _ string) bool {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-
-	return a.excluded
-}
-
 func (a *simAXPort) PrimeApplication(_ context.Context, _ string) (bool, error) {
 	return true, nil
 }
@@ -900,13 +892,6 @@ func (a *simAXPort) focusedAppQueryCount() int {
 	defer a.mu.Unlock()
 
 	return a.focusedAppQueries
-}
-
-func (a *simAXPort) setExcluded(excluded bool) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-
-	a.excluded = excluded
 }
 
 func (a *simAXPort) recordedClicks() []simClick {

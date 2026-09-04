@@ -10,14 +10,12 @@ import (
 	"github.com/y3owk1n/neru/internal/derrors"
 )
 
-// newTestAdapter builds an adapter over the mock AX client with no exclusions.
+// newTestAdapter builds an adapter over the mock AX client.
 func newTestAdapter(t *testing.T) *accessibility.Adapter {
 	t.Helper()
 
 	return accessibility.NewAdapter(
 		zap.NewNop(),
-		nil,
-		[]string{"AXButton"},
 		&accessibility.MockAXClient{},
 		false,
 	)
