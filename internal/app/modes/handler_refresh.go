@@ -48,6 +48,7 @@ func (h *handlerState) refreshHintsForScreenChange(ctx context.Context) bool {
 	filterTextContains := h.hints.Context.FilterTextContains()
 	strategyOverride := h.hints.Context.StrategyOverride()
 	labelDirectionOverride := h.hints.Context.LabelDirectionOverride()
+	scopeOverride := h.hints.Context.ScopeOverride()
 
 	// Generate hints with filters preserved; SetHints below performs the
 	// single redraw after active-screen filtering.
@@ -75,6 +76,7 @@ func (h *handlerState) refreshHintsForScreenChange(ctx context.Context) bool {
 		strategyOverride,
 		labelDirectionOverride,
 		splitWordOverride,
+		scopeOverride,
 	)
 	if showHintsErr != nil {
 		h.logger.Error("Failed to refresh hints after screen change", zap.Error(showHintsErr))

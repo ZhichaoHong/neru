@@ -400,12 +400,14 @@ func defaultHints() HintsConfig {
 	return HintsConfig{
 		Enabled:        true,
 		Strategy:       domain.StrategyAXTree,
+		Scope:          domain.HintScopeWindow,
 		HintCharacters: "asdfghjkl",
 		LabelDirection: domain.LabelDirectionNormal,
 		MaxDepth:       DefaultMaxDepth,
 		Hotkeys: map[string]StringOrStringArray{
 			KeyDisplayEscape:    {CmdIdle},
 			"/":                 {"action search_hints"},
+			"=":                 {"action expand_hint_scope"},
 			KeyDisplayBackspace: {CmdBackspace},
 			"Tab":               {"action cycle_hint"},
 			"Shift+Tab":         {"action cycle_hint --backward"},

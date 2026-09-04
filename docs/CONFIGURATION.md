@@ -582,7 +582,7 @@ All actions available in hotkeys. These also work as `neru action <name>` — se
 | Scroll      | `scroll_up`, `scroll_down`, `scroll_left`, `scroll_right`                              |
 | Page        | `page_up`, `page_down`, `go_top`, `go_bottom`                                          |
 | Keyboard    | `feed`                                                                                 |
-| Hints       | `search_hints`, `cycle_hint`, `cycle_hint --backward`                                  |
+| Hints       | `search_hints`, `cycle_hint`, `cycle_hint --backward`, `expand_hint_scope`              |
 | Delay       | `sleep <duration>` — plain numbers are seconds (`0.5`), explicit units: `500ms`, `1s`  |
 | Mode        | `reset`, `backspace`, `move_cell --direction <dir>`                                    |
 | Composition | `wait_for_mode_exit` (with optional `--bail`), `save_cursor_pos`, `restore_cursor_pos` |
@@ -595,7 +595,8 @@ All actions available in hotkeys. These also work as `neru action <name>` — se
 - Use `--bare` (e.g. `"action left_click --bare"`) to target the cursor position instead of the current mode selection (see [CLI.md](CLI.md#neru-action-left_click-right_click-middle_click))
 - `scroll_up` / `scroll_down` support `--steps` (e.g. `"action scroll_down --steps 200"`) to override `scroll_step` (see [CLI.md](CLI.md#neru-action-scroll_up-scroll_down-scroll_left-scroll_right))
 - `move_cell` slides the grid or recursive-grid selection to a neighbouring cell on the same layer, e.g. `"action move_cell --direction=right"`. It takes an optional `--count`, and repeats while the key is held when [`[held_repeat]`](#held_repeat) is enabled (see [CLI.md](CLI.md#neru-action-move_cell))
-- `reset`, `backspace`, `move_cell`, `search_hints`, `cycle_hint`, `sleep`, `wait_for_mode_exit`, `save_cursor_pos`, `restore_cursor_pos`, `hide_cursor`, and `show_cursor` are not valid mode `--action` values — use `neru action ...` or in hotkeys as `"action ..."`
+- `expand_hint_scope` widens the running hints session to the whole active monitor and re-scans, for the times the control you wanted is in a window behind the focused one. Bound to `=` by default. It needs a strategy that reads the screen; under `axtree` there is nothing to widen. See [Hint scope](#hint-scope)
+- `reset`, `backspace`, `move_cell`, `search_hints`, `cycle_hint`, `expand_hint_scope`, `sleep`, `wait_for_mode_exit`, `save_cursor_pos`, `restore_cursor_pos`, `hide_cursor`, and `show_cursor` are not valid mode `--action` values — use `neru action ...` or in hotkeys as `"action ..."`
 - `sleep` is the exception among those: it works only in hotkey bindings (`"action sleep 0.5"`), **not** as a terminal command, and it cannot appear in a comma-separated chain. See [CLI.md](CLI.md#action-sleep-hotkey-bindings-only)
 
 #### Feed Keys
@@ -793,6 +794,7 @@ Start with search visible: `neru hints --search` (see [CLI.md](CLI.md#neru-hints
 | ---------------------------------- | ------------ | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `enabled`                          | bool         | `true`                  | Enable/disable hints mode                                                                                                                                                                                                                                                                                                            |
 | `strategy`                         | string       | `"axtree"`              | Element detection strategy: `"axtree"` (the platform accessibility tree), `"vision"` (screen recognition: the Vision framework on macOS, tesseract on Linux, `Windows.Media.Ocr` on Windows), `"hybrid"` (both, merged) or `"contour"` (edge detection over the capture). Vision detects the frontmost window content from a screen capture while still using the accessibility tree for system elements (menubar, dock, NC); hybrid walks the window tree as well and drops the recognized regions the tree already answered for; contour reads neither tree nor text and returns unnamed geometry, so hint search cannot match it. Overridable per-app via `[hints.app_configs]`. See [Choosing a strategy](#choosing-a-strategy) below. |
+| `scope`                            | string       | `"window"`              | How far a screen-reading strategy looks: `"window"` reads the focused window, `"screen"` reads the whole active monitor so controls in windows behind it are hinted too. Only `"vision"`, `"hybrid"` and `"contour"` read the screen; `"axtree"` walks the focused window whatever this says. See [Hint scope](#hint-scope) below. |
 | `hint_characters`                  | string       | `"asdfghjkl"`           | Characters used for labels                                                                                                                                                                                                                                                                                                           |
 | `label_direction`                  | string       | `"normal"`              | Hint label algorithm: `"normal"` (default, prefix-avoidance greedy) or `"reverse"` (reverse-order tiers). Empty value defaults to `"normal"`. Overridable per-app via `[hints.app_configs]` and per-activation via the `neru hints --label-direction` CLI flag. See [Choosing a label direction](#choosing-a-label-direction) below. |
 | `max_depth`                        | int          | `50`                    | Max accessibility tree depth (0 = unlimited)                                                                                                                                                                                                                                                                                         |
@@ -1077,6 +1079,35 @@ The override _replaces_ the strategy for that app rather than adding to it. So t
 Two platform limits, both documented rather than worked around. On macOS the capture is the main display only, so a window on a second monitor is refused with a message saying so rather than hinted from the wrong pixels. And on a HiDPI Linux output the detector measures in physical pixels against thresholds written in logical ones, which loses the smallest targets - reading a per-output scale factor needs compositor state the capture path does not carry. Inside an RDP or Citrix client the same mismatch is unfixable everywhere: those pixels arrive with the remote session's DPI and no local API can report it.
 
 `--split-word` applies to `vision` and `hybrid`, and is refused under `axtree` and `contour` - neither has recognized text to split.
+
+### Hint scope
+
+`hints.scope` decides how far a screen-reading strategy looks. `"window"`, the default, reads the focused window. `"screen"` reads the whole active monitor, so the controls in the windows behind the focused one get labels too - a chat window next to an editor, a terminal beside a browser, the taskbar.
+
+**Only the screen-reading strategies are bounded by it.** `vision`, `contour` and the vision half of `hybrid` capture a region, and this is that region. `axtree` walks the focused window and the popovers over it whatever the scope says, because widening a tree walk means walking every top-level window's tree and that cost has not been measured. So `scope = "screen"` under `axtree` is inert, and `neru config validate` warns rather than refusing.
+
+Under `hybrid` the two halves keep their own reach: the tree still answers for the focused window, and the OCR pass now covers the monitor. The merge is unchanged - a tree element wins any recognized region it overlaps by more than half - so the windows behind come back as recognized text while the focused window keeps its roles and titles.
+
+What it costs is the capture and the recognition pass, and it grows faster than the area does. Measured on Windows 11 against a 3840x2160 monitor, a whole-screen `vision` pass took about 420 ms where a large focused window took about 70 ms - 6x the time for 1.7x the pixels, because the wider region also tripled the elements to classify (98 to 306 in that sample). That leaves plenty of room under the 5000 ms `hints.vision.request_timeout_ms` default, but a denser screen or a slower machine eats into it, so raise the timeout if a wide scan starts timing out.
+
+```toml
+[hints]
+strategy = "hybrid"
+scope = "screen"
+```
+
+**One caveat that is the operating system's rather than Neru's.** A hint on a window that is not focused clicks where that window is, and a window is free to spend the first click activating itself rather than delivering it to the control under the pointer - on Windows, a `WM_MOUSEACTIVATE` handler returning `MA_ACTIVATEANDEAT`. In practice that is the exception. Measured on Windows 11, neither a classic Win32 dialog nor a WinUI 3 app swallows it: the first click both raised the window and actuated the control under the pointer. Where an app does swallow it the hint has still done something useful - it brought the window forward - but the control needs a second press.
+
+#### Expanding a running session
+
+Paying for the wider scan on every activation is usually the wrong trade, so `scope` has a per-session counterpart: the `expand_hint_scope` action, bound to `=` in hints mode by default. Press it and the session re-scans at screen scope with the same filters and overrides it started with.
+
+One way, and sticky. There is no narrowing counterpart, and the expansion holds for the rest of the session - through a space change, a monitor move, a modifier passthrough. The next activation starts from `hints.scope` again. Pressing it twice is not an error; a session already reading the screen is left alone rather than re-scanned for the same answer.
+
+```toml
+[hints.hotkeys]
+"=" = "action expand_hint_scope"
+```
 
 ### Choosing a label direction
 

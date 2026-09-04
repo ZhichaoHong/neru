@@ -180,6 +180,7 @@ func PlatformSupport() parity.Declaration {
 
 			"hints.enabled",
 			"hints.strategy",
+			"hints.scope",
 			"hints.hint_characters",
 			"hints.label_direction",
 			"hints.ui.font_size",

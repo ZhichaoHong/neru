@@ -246,3 +246,38 @@ func (h *ActionsHandler) handleSearchHintsAction() ipc.Response {
 		Code:    ipc.CodeOK,
 	}
 }
+
+// handleExpandHintScopeAction widens the running hints session to the whole
+// active monitor. A session that already reads the screen answers successfully
+// and says so, because pressing the key twice is not an error.
+func (h *ActionsHandler) handleExpandHintScopeAction() ipc.Response {
+	if h.modesHandler == nil {
+		return ipc.Response{
+			Success: false,
+			Message: msgModesHandlerNotAvailable,
+			Code:    ipc.CodeActionFailed,
+		}
+	}
+
+	expanded, err := h.modesHandler.ExpandHintScope()
+	if err != nil {
+		h.logger.Error("Failed to expand hint scope", zap.Error(err))
+
+		return ipc.Response{
+			Success: false,
+			Message: "failed to expand hint scope: " + err.Error(),
+			Code:    ipc.CodeActionFailed,
+		}
+	}
+
+	message := "hints already read the whole screen"
+	if expanded {
+		message = "expand_hint_scope performed"
+	}
+
+	return ipc.Response{
+		Success: true,
+		Message: message,
+		Code:    ipc.CodeOK,
+	}
+}

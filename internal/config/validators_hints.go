@@ -130,6 +130,7 @@ func (c *Config) ValidateHints(warnings *Warnings) error {
 		c.validateHintScanDepth,
 		c.validateHintMissionControl,
 		c.validateHintVocabulary,
+		func() error { c.warnScopeNoStrategyReads(warnings); return nil },
 		func() error { return validateHintsVisionConfig(c.Hints.Vision) },
 	}
 
@@ -459,6 +460,16 @@ func (c *Config) validateHintVocabulary() error {
 		)
 	}
 
+	switch c.Hints.Scope {
+	case domain.HintScopeWindow, domain.HintScopeScreen, "":
+	default:
+		return derrors.Newf(
+			derrors.CodeInvalidConfig,
+			"hints.scope must be %q or %q",
+			domain.HintScopeWindow, domain.HintScopeScreen,
+		)
+	}
+
 	switch c.Hints.LabelDirection {
 	case domain.LabelDirectionReverse, domain.LabelDirectionNormal, "":
 	default:
@@ -470,6 +481,38 @@ func (c *Config) validateHintVocabulary() error {
 	}
 
 	return nil
+}
+
+// warnScopeNoStrategyReads reports a hints.scope that nothing will act on.
+//
+// Only the strategies that read the screen are bounded by a region, so
+// scope = "screen" with a configuration that never reads one is a setting that
+// loads and does nothing. A warning rather than a refusal, per ADR 0002: the
+// combination is inert, not broken, and refusing would replace the whole file.
+//
+// The per-app strategies count. One application on "vision" is enough for the
+// wider scope to mean something, so the warning is only for a configuration
+// where no strategy anywhere reads the screen.
+func (c *Config) warnScopeNoStrategyReads(warnings *Warnings) {
+	if c.Hints.Scope != domain.HintScopeScreen {
+		return
+	}
+
+	if domain.StrategyReadsScreen(c.Hints.Strategy) {
+		return
+	}
+
+	for _, appConfig := range c.Hints.AppConfigs {
+		if domain.StrategyReadsScreen(appConfig.Strategy) {
+			return
+		}
+	}
+
+	warnings.Addf(
+		"hints.scope is %q but no strategy reads the screen: %q walks the focused window whatever the scope says. Set hints.strategy, or an app's strategy, to %q, %q or %q for the wider scope to apply",
+		domain.HintScopeScreen, domain.StrategyAXTree,
+		domain.StrategyVision, domain.StrategyHybrid, domain.StrategyContour,
+	)
 }
 
 func validateHintsVisionConfig(vision HintsVisionConfig) error {

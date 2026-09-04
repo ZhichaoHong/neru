@@ -87,6 +87,21 @@ const (
 	StrategyContour = "contour"
 )
 
+// Hint collection scopes, the values hints.scope accepts.
+//
+// They bound the region a screen-reading strategy captures. The accessibility
+// tree is not scoped by them: it walks the focused window and the popovers over
+// it whatever this says, because widening it means walking every top-level
+// window's tree and that cost has not been measured.
+const (
+	// HintScopeWindow reads the focused window only. This is the default.
+	HintScopeWindow = "window"
+
+	// HintScopeScreen reads the whole active monitor, so controls in windows
+	// behind the focused one are hinted as well.
+	HintScopeScreen = "screen"
+)
+
 // StrategyReadsScreen reports whether a strategy captures the screen, which is
 // what decides two things a caller cannot answer from the value alone: whether
 // the screen-recording permission is a prerequisite, and whether a refresh has

@@ -67,6 +67,60 @@ func (h *Handler) StartHintSearch() error {
 	return h.startHintSearch()
 }
 
+// ExpandHintScope widens the running hints session to the whole active monitor
+// and re-scans, so the controls in the windows behind the focused one are hinted
+// too. It reports whether the session actually widened; a session already
+// reading the screen says no and is left alone rather than re-scanning for the
+// same answer.
+func (h *Handler) ExpandHintScope() (bool, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	return h.expandHintScope()
+}
+
+// expandHintScope is the locked body of ExpandHintScope.
+//
+// One way and sticky: there is no narrowing counterpart, and the override lives
+// on the context until the session ends, so every later refresh in this session
+// — a space change, a monitor move, a passthrough — keeps the wider scope. The
+// next activation starts from hints.scope again because Reset clears it.
+//
+// The re-scan goes through the ordinary in-place refresh rather than the
+// screen-change path, because that is the one that takes the labels off screen
+// before a screen-reading strategy captures it. Expanding is only worth doing
+// under such a strategy, so capturing our own labels would be the common case
+// rather than the corner one.
+func (h *handlerState) expandHintScope() (bool, error) {
+	if h.appState.CurrentMode() != domain.ModeHints {
+		return false, derrors.New(
+			derrors.CodeInvalidInput,
+			"expand_hint_scope requires hints mode",
+		)
+	}
+
+	if h.hints == nil || h.hints.Context == nil {
+		return false, derrors.New(derrors.CodeActionFailed, "hints component not available")
+	}
+
+	alreadyWide := h.hints.Context.ScopeOverride() == domain.HintScopeScreen ||
+		h.config.Hints.Scope == domain.HintScopeScreen
+	if alreadyWide {
+		h.logger.Debug("Hints already read the whole screen; not expanding")
+
+		return false, nil
+	}
+
+	h.hints.Context.SetScopeOverride(domain.HintScopeScreen)
+
+	// A bare activation: the refresh path writes only the fields an activation
+	// carries, so every filter and override the session was started with — and
+	// the scope just set — comes from the context untouched.
+	h.activateHintModeInternal(modecmd.Activation{Mode: domain.ModeHints})
+
+	return true, nil
+}
+
 // CycleHint cycles through visible hints in hints mode, selecting the next or previous one.
 // When executeAction is true, any pending action is performed on the selected hint
 // (used by search confirmation). When false, only the cursor moves (used by the

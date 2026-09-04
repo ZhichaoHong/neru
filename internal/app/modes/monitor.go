@@ -407,6 +407,7 @@ func (h *handlerState) refreshHintsForMonitorMove(
 	filterTextContains := h.hints.Context.FilterTextContains()
 	strategyOverride := h.hints.Context.StrategyOverride()
 	labelDirectionOverride := h.hints.Context.LabelDirectionOverride()
+	scopeOverride := h.hints.Context.ScopeOverride()
 
 	splitWordOverride := false
 	if h.hints != nil && h.hints.Context != nil {
@@ -421,6 +422,7 @@ func (h *handlerState) refreshHintsForMonitorMove(
 		strategyOverride,
 		labelDirectionOverride,
 		splitWordOverride,
+		scopeOverride,
 	)
 	if err != nil {
 		h.logger.Error(

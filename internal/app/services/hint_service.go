@@ -77,7 +77,11 @@ func NewHintService(
 // GenerateHints collects clickable elements and generates labels without
 // drawing them, so mode handlers can filter and position hints before the
 // first render. A non-empty bundleID skips the AX lookup; non-empty overrides
-// win over the config-derived strategy and label direction.
+// win over the config-derived strategy, label direction and scope.
+//
+// scopeOverride sits after splitWord rather than beside the other two string
+// overrides on purpose: three adjacent strings transpose silently at a call
+// site, and the bool between them makes that a compile error.
 func (s *HintService) GenerateHints(
 	ctx context.Context,
 	filterRoles []string,
@@ -86,6 +90,7 @@ func (s *HintService) GenerateHints(
 	strategyOverride string,
 	labelDirectionOverride string,
 	splitWord bool,
+	scopeOverride string,
 ) ([]*hint.Interface, error) {
 	// This read must not be widened to span the strategy switch below: the
 	// vision branch takes s.mu for writing (notifyVisionUnavailable), and a
@@ -122,6 +127,11 @@ func (s *HintService) GenerateHints(
 		labelDirection = labelDirectionOverride
 	}
 
+	scope := cfg.Scope
+	if scopeOverride != "" {
+		scope = scopeOverride
+	}
+
 	if splitWord && !domain.StrategyReadsText(strategy) {
 		return nil, derrors.New(
 			derrors.CodeInvalidInput,
@@ -141,7 +151,7 @@ func (s *HintService) GenerateHints(
 	// out - it reads the screen too, but asks the tree for nothing at all.
 	switch strategy {
 	case domain.StrategyVision:
-		elements = s.generateHintsVision(ctx, filter, splitWord, true)
+		elements = s.generateHintsVision(ctx, filter, splitWord, true, scope)
 	case domain.StrategyHybrid:
 		// The tree half is collected wider than the activation asked for, so the
 		// merge can drop an OCR region a clickable control already answers for even
@@ -150,12 +160,18 @@ func (s *HintService) GenerateHints(
 		// are never hinted.
 		elements = retainMatching(
 			mergeVisionWithTree(
-				s.generateHintsVision(ctx, hybridCollectFilter(filter, cfg, bundleID), splitWord, false),
+				s.generateHintsVision(
+					ctx,
+					hybridCollectFilter(filter, cfg, bundleID),
+					splitWord,
+					false,
+					scope,
+				),
 			),
 			filter,
 		)
 	case domain.StrategyContour:
-		elements = s.generateHintsContour(ctx, filter)
+		elements = s.generateHintsContour(ctx, filter, scope)
 	default:
 		elements, genErr = s.generateHintsAX(ctx, filter)
 	}
@@ -339,6 +355,7 @@ func (s *HintService) generateHintsVision(
 	filter ports.ElementFilter,
 	splitWord bool,
 	visionOwnsWindow bool,
+	scope string,
 ) []*element.Element {
 	var allElements []*element.Element
 
@@ -372,7 +389,7 @@ func (s *HintService) generateHintsVision(
 		return allElements
 	}
 
-	windowBounds, haveRegion := s.regionToRead(ctx)
+	windowBounds, haveRegion := s.regionToRead(ctx, scope)
 	if !haveRegion {
 		return allElements
 	}
@@ -443,6 +460,7 @@ func (s *HintService) generateHintsVision(
 func (s *HintService) generateHintsContour(
 	ctx context.Context,
 	filter ports.ElementFilter,
+	scope string,
 ) []*element.Element {
 	if s.vision == nil {
 		s.logger.Warn("Contour strategy selected but vision port is unavailable")
@@ -450,7 +468,7 @@ func (s *HintService) generateHintsContour(
 		return nil
 	}
 
-	region, haveRegion := s.regionToRead(ctx)
+	region, haveRegion := s.regionToRead(ctx, scope)
 	if !haveRegion {
 		return nil
 	}
@@ -496,9 +514,18 @@ func (s *HintService) generateHintsContour(
 // scanning the whole screen is a degradation nobody asked for: slower, noisier,
 // and silent until now.
 //
+// scope short-circuits all of that. domain.HintScopeScreen was asked for
+// deliberately - by hints.scope, or by the expand action mid-session - so the
+// focused window is not consulted at all: whether one exists changes nothing
+// about the answer, and asking would only add a failure mode.
+//
 // ok is false only when neither question could be answered, and then the caller
 // has no region to capture and nothing to hint.
-func (s *HintService) regionToRead(ctx context.Context) (image.Rectangle, bool) {
+func (s *HintService) regionToRead(ctx context.Context, scope string) (image.Rectangle, bool) {
+	if scope == domain.HintScopeScreen {
+		return s.activeScreenBounds(ctx)
+	}
+
 	windowBounds, found, boundsErr := s.system.FocusedWindowBounds(ctx)
 	if boundsErr == nil && found {
 		return windowBounds, true
@@ -513,6 +540,10 @@ func (s *HintService) regionToRead(ctx context.Context) (image.Rectangle, bool) 
 		s.logger.Debug("No focused window, scanning the whole screen")
 	}
 
+	return s.activeScreenBounds(ctx)
+}
+
+func (s *HintService) activeScreenBounds(ctx context.Context) (image.Rectangle, bool) {
 	screenBounds, screenErr := s.system.ScreenBounds(ctx)
 	if screenErr != nil {
 		s.logger.Error("Failed to get screen bounds for screen detection", zap.Error(screenErr))

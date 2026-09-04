@@ -144,6 +144,7 @@ func TestHintService_DetectMissionControlFollowsTheConfigInForce(t *testing.T) {
 			domain.StrategyAXTree,
 			"",
 			false,
+			"",
 		)
 		if err != nil {
 			t.Fatalf("GenerateHints() unexpected error: %v", err)
@@ -218,6 +219,7 @@ func TestHintService_GenerateHintsVisionCombinesSupplementaryAndWindowElements(
 		domain.StrategyVision,
 		"",
 		false,
+		"",
 	)
 	if err != nil {
 		t.Fatalf("GenerateHints() unexpected error: %v", err)
@@ -299,6 +301,7 @@ func TestHintService_GenerateHintsHybridWalksTheWindowAndMergesTheTwoSets(
 		domain.StrategyHybrid,
 		"",
 		false,
+		"",
 	)
 	if err != nil {
 		t.Fatalf("GenerateHints() unexpected error: %v", err)
@@ -401,6 +404,7 @@ func TestHintService_GenerateHintsHybridDedupesAgainstRolesTheActivationExcluded
 		domain.StrategyHybrid,
 		"",
 		false,
+		"",
 	)
 	if err != nil {
 		t.Fatalf("GenerateHints() unexpected error: %v", err)
@@ -496,6 +500,7 @@ func TestHintService_GenerateHintsSplitWordNeedsAScreenStrategy(t *testing.T) {
 				test.strategy,
 				"",
 				true,
+				"",
 			)
 
 			if test.refused && err == nil {
@@ -547,6 +552,7 @@ func TestHintService_GenerateHintsVisionWithNilPortReturnsSupplementaryElements(
 		domain.StrategyVision,
 		"",
 		false,
+		"",
 	)
 	if err != nil {
 		t.Fatalf("GenerateHints() unexpected error: %v", err)
@@ -600,6 +606,7 @@ func TestHintService_GenerateHintsVisionNotifiesWhenTheStrategyIsUnavailable(t *
 	for range 3 {
 		_, err := service.GenerateHints(
 			context.Background(), nil, nil, "com.example.app", domain.StrategyVision, "", false,
+			"",
 		)
 		if err != nil {
 			t.Fatalf("GenerateHints() unexpected error: %v", err)
@@ -666,6 +673,7 @@ func TestHintService_GenerateHintsVisionNoticeSurvivesTheActivationContext(t *te
 
 	_, err := service.GenerateHints(
 		ctx, nil, nil, "com.example.app", domain.StrategyVision, "", false,
+		"",
 	)
 	if err != nil {
 		t.Fatalf("GenerateHints() unexpected error: %v", err)
@@ -724,6 +732,7 @@ func TestHintService_GenerateHintsVisionRetriesANoticeThatFailedToSend(t *testin
 	for seen < 2 {
 		_, err := service.GenerateHints(
 			context.Background(), nil, nil, "com.example.app", domain.StrategyVision, "", false,
+			"",
 		)
 		if err != nil {
 			t.Fatalf("GenerateHints() unexpected error: %v", err)
@@ -774,6 +783,7 @@ func TestHintService_GenerateHintsVisionStaysQuietForAnOrdinaryFailure(t *testin
 
 	_, err := service.GenerateHints(
 		context.Background(), nil, nil, "com.example.app", domain.StrategyVision, "", false,
+		"",
 	)
 	if err != nil {
 		t.Fatalf("GenerateHints() unexpected error: %v", err)
@@ -958,7 +968,7 @@ func TestHintService_GenerateHintsPicksDirectionGenerator(t *testing.T) {
 	// to the default normal generator. The normal algorithm keeps 3
 	// single-char slots ([A S D]) and expands the 4th alphabet slot (F)
 	// into 2-char labels starting at [FA].
-	hints, err := service.GenerateHints(ctx, nil, nil, "", "", "", false)
+	hints, err := service.GenerateHints(ctx, nil, nil, "", "", "", false, "")
 	if err != nil {
 		t.Fatalf("GenerateHints() unexpected error: %v", err)
 	}
@@ -979,7 +989,7 @@ func TestHintService_GenerateHintsPicksDirectionGenerator(t *testing.T) {
 	// The reverse algorithm fills all 4 single-char slots ([AA SA DA FA])
 	// before yielding a 2-char label ([AS]). The 1st and 5th labels (AA, AS)
 	// prove the override actually engaged.
-	hints, err = service.GenerateHints(ctx, nil, nil, "", "", domain.LabelDirectionReverse, false)
+	hints, err = service.GenerateHints(ctx, nil, nil, "", "", domain.LabelDirectionReverse, false, "")
 	if err != nil {
 		t.Fatalf("GenerateHints() with reverse override unexpected error: %v", err)
 	}
@@ -1168,17 +1178,21 @@ func mustVisionElement(id string, bounds image.Rectangle) *element.Element {
 type mockVisionPort struct {
 	detectedElements  []*element.Element
 	detectErr         error
+	detectRegions     []image.Rectangle
 	contouredElements []*element.Element
 	contourErr        error
 	contourCalls      int
+	contourRegions    []image.Rectangle
 }
 
 func (m *mockVisionPort) DetectElements(
-	context.Context,
-	image.Rectangle,
-	config.HintsVisionConfig,
-	bool,
+	_ context.Context,
+	region image.Rectangle,
+	_ config.HintsVisionConfig,
+	_ bool,
 ) ([]*element.Element, error) {
+	m.detectRegions = append(m.detectRegions, region)
+
 	if m.detectErr != nil {
 		return nil, m.detectErr
 	}
@@ -1187,10 +1201,11 @@ func (m *mockVisionPort) DetectElements(
 }
 
 func (m *mockVisionPort) DetectContours(
-	context.Context,
-	image.Rectangle,
+	_ context.Context,
+	region image.Rectangle,
 ) ([]*element.Element, error) {
 	m.contourCalls++
+	m.contourRegions = append(m.contourRegions, region)
 
 	if m.contourErr != nil {
 		return nil, m.contourErr
@@ -1231,6 +1246,7 @@ func TestHintService_GenerateHintsRejectsSplitWordForNonVisionStrategy(t *testin
 		domain.StrategyAXTree,
 		"",
 		true, // splitWord
+		"",
 	)
 	if err == nil {
 		t.Fatal("expected error, got nil")
@@ -1302,6 +1318,7 @@ func TestHintService_GenerateHintsRoleFilterResolvingToNothing(t *testing.T) {
 				"",
 				"",
 				false,
+				"",
 			)
 			if err != nil {
 				t.Fatalf("GenerateHints() unexpected error: %v", err)
@@ -1359,6 +1376,7 @@ func TestHintService_GenerateHintsRoleFlagOverridesConfig(t *testing.T) {
 		"",
 		"",
 		false,
+		"",
 	)
 	if err != nil {
 		t.Fatalf("GenerateHints() unexpected error: %v", err)
@@ -1456,6 +1474,7 @@ func TestHintService_GenerateHintsVisionSaysWhyItFellBackToTheScreen(t *testing.
 
 			_, err := service.GenerateHints(
 				context.Background(), nil, nil, "com.example.app", domain.StrategyVision, "", false,
+				"",
 			)
 			if err != nil {
 				t.Fatalf("GenerateHints() unexpected error: %v", err)
@@ -1525,6 +1544,7 @@ func TestHintService_GenerateHintsContourNeverAsksTheTree(t *testing.T) {
 
 	hints, err := service.GenerateHints(
 		context.Background(), nil, nil, "com.example.app", domain.StrategyContour, "", false,
+		"",
 	)
 	if err != nil {
 		t.Fatalf("GenerateHints() unexpected error: %v", err)
@@ -1575,6 +1595,7 @@ func TestHintService_GenerateHintsContourHoldsResultsToTheFilter(t *testing.T) {
 		domain.StrategyContour,
 		"",
 		false,
+		"",
 	)
 	if err != nil {
 		t.Fatalf("GenerateHints() unexpected error: %v", err)
@@ -1624,6 +1645,7 @@ func TestHintService_GenerateHintsContourNotifiesWhenTheStrategyIsUnavailable(t 
 
 	hints, err := service.GenerateHints(
 		context.Background(), nil, nil, "com.example.app", domain.StrategyContour, "", false,
+		"",
 	)
 	if err != nil {
 		t.Fatalf("GenerateHints() unexpected error: %v", err)

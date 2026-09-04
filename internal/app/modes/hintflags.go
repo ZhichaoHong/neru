@@ -102,6 +102,7 @@ type hintOverrides struct {
 	strategy       string
 	labelDirection string
 	splitWord      bool
+	scope          string
 }
 
 // resolveHintOverrides reads the overrides in force. They come from the
@@ -114,9 +115,13 @@ func (h *handlerState) resolveHintOverrides(activation modecmd.Activation) hintO
 			strategy:       h.hints.Context.StrategyOverride(),
 			labelDirection: h.hints.Context.LabelDirectionOverride(),
 			splitWord:      h.hints.Context.SplitWord(),
+			scope:          h.hints.Context.ScopeOverride(),
 		}
 	}
 
+	// No scope fallback: unlike the other three, nothing on the activation can
+	// ask for a scope. It is hints.scope, plus the expand action, which needs a
+	// session to expand.
 	return hintOverrides{
 		strategy:       derefOr(activation.Strategy, ""),
 		labelDirection: derefOr(activation.LabelDirection, ""),

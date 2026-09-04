@@ -65,6 +65,7 @@ text = "#E8EEFF"
 [hints]
 enabled = true
 strategy = "axtree"                         # Element detection: "axtree" (accessibility tree), "vision" (screen recognition), "hybrid" (both) or "contour" (edge detection, for windows that expose nothing)
+scope = "window"                            # How far the screen-reading strategies look: "window" (focused window) or "screen" (whole active monitor). The accessibility tree ignores this
 hint_characters = "asdfghjkl"               # Characters used for hint labels
 label_direction = "normal"                  # Hint label algorithm: "normal" (default) or "reverse"
 max_depth = 50                              # Max accessibility tree depth (0 = unlimited)
@@ -116,6 +117,7 @@ visible_check_enabled = false
 [hints.hotkeys]
 "Escape" = "idle"
 "/" = "action search_hints"
+"=" = "action expand_hint_scope"
 "Backspace" = "action backspace"
 "Tab" = "action cycle_hint"
 "Shift+Tab" = "action cycle_hint --backward"

@@ -18,6 +18,7 @@ type baseContext struct {
 	strategyOverride       string
 	labelDirectionOverride string
 	splitWord              bool
+	scopeOverride          string
 }
 
 // SetPendingAction sets the action to execute when mode selection is complete.
@@ -91,6 +92,7 @@ func (c *baseContext) Reset() {
 	c.strategyOverride = ""
 	c.labelDirectionOverride = ""
 	c.splitWord = false
+	c.scopeOverride = ""
 }
 
 // SetFilterRoles sets the filter roles for hint mode.
@@ -142,6 +144,19 @@ func (c *baseContext) SetLabelDirectionOverride(direction string) {
 // LabelDirectionOverride returns the session hint label direction override.
 func (c *baseContext) LabelDirectionOverride() string {
 	return c.labelDirectionOverride
+}
+
+// SetScopeOverride stores the session hint collection scope override, which is
+// how the expand action widens a session past hints.scope. Sticky for the rest
+// of the session and never narrowed: Reset clears it on the way out, so the next
+// activation starts from the configured scope again.
+func (c *baseContext) SetScopeOverride(scope string) {
+	c.scopeOverride = scope
+}
+
+// ScopeOverride returns the session hint collection scope override.
+func (c *baseContext) ScopeOverride() string {
+	return c.scopeOverride
 }
 
 // SetSplitWord stores the session word splitting preference.

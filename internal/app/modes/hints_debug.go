@@ -48,6 +48,7 @@ func (h *Handler) DebugProbeHints(
 		strategy,
 		"", // labelDirectionOverride: probe uses the configured default
 		splitWord,
+		"", // scopeOverride: probe reads whatever hints.scope says
 	)
 	if genErr != nil {
 		return "", genErr
