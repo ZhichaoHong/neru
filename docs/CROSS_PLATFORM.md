@@ -1422,15 +1422,6 @@ working, which is exactly why the build exists.
 8. Font resolution — alias mapping only, no system font enumeration
 9. `neru services` — every subcommand returns `CodeNotSupported`, where macOS
    installs a launchd agent and Linux a systemd user unit
-10. IPC endpoint, client side — the daemon's endpoint is scoped to one user on
-    every platform, but only the Unix client checks that for itself before
-    connecting. A named pipe carries no ownership a client can read without
-    opening it, so the Windows CLI trusts the name it derives from its own SID.
-    The same gap covers the upgrade path: a Unix CLI still reaches a daemon
-    left running on the previous endpoint and gets the version-mismatch message
-    asking for a restart, while on Windows the previous name is named in the
-    failure text rather than dialed, and an old daemon has to be stopped by
-    hand before `neru launch` starts a new one
 
 **macOS**
 
@@ -1940,8 +1931,7 @@ Windows is one backend family with alpha-level support. Prefer:
 - pure Go Win32 / COM bindings (via `x/sys/windows` or syscall) over CGO
 
 Do not introduce additional Windows backend naming until there is a real reason.
-See [Known Gaps](#known-gaps) for the current Windows to-do list — several
-entries there are well-scoped starter tasks.
+[Known Gaps](#known-gaps) lists any Windows work still open.
 
 ## CGO Guidance
 
