@@ -177,7 +177,7 @@ that is what [Known Gaps](#known-gaps) tracks, per
 | **Cursor position**           | ✅ `CGEventGetLocation`  | ✅ `XQueryPointer`     | ✅ compositor IPC (Hyprland) / sync-surface trick | ✅ sync-surface trick | ✅ `GetCursorPos` |
 | **Cursor move**               | ✅ `CGEventPost` ([`postMouseMoveLocked`](../internal/adapter/platform/darwin/accessibility_mouse_darwin.m)) | ✅ XTest (`XTestFakeMotionEvent`) | ✅ `zwlr_virtual_pointer` | ✅ libei                | ✅ `SetCursorPos`            |
 | **Mouse buttons / drag**      | ✅ `CGEventPost`         | ✅ XTest ⁸             | ✅ `zwlr_virtual_pointer`    | ✅ libei                | ✅ `SendInput` ¹⁰            |
-| **Scroll injection**          | ✅ both axes             | ✅ both axes ⁸         | ✅ both axes (uinput + virtual pointer) | ✅ libei     | ⚠️ vertical only             |
+| **Scroll injection**          | ✅ both axes             | ✅ both axes ⁸         | ✅ both axes (uinput + virtual pointer) | ✅ libei     | ⚠️ both axes; vertical dies under a hints/grid overlay |
 | **Modified scroll (`--modifier`)** | ✅ `CGEventSetFlags` on every chunk | ✅ XTest key hold ⁸ | ✅ virtual keyboard, uinput batch skipped (kept on Hyprland ¹³) | ✅ libei | ✅ `SendInput` key hold ¹⁰ |
 | **Smooth cursor animation**   | ✅ (incl. relative, opt-in) | ✅ incl. relative, opt-in | ✅ incl. relative, opt-in | ✅ incl. relative, opt-in | ❌                        |
 | **Smooth scroll animation**   | ✅                       | ⚠️ whole notches only ⁴ | ✅ continuous virtual-pointer axis ⁴ (whole notches when modified on Hyprland ¹³) | ⚠️ libei scroll delta, unverified ⁴ | ❌       |
@@ -767,6 +767,26 @@ scrolling the wheel still goes out, unchanged. Three consequences worth knowing:
   back, so a delta much larger than one increment travels less far there than the
   wheel would have carried it; the shipped `scroll_step` of 50 pixels is one
   increment, where there is nothing to coalesce.
+
+**The Windows overlay eats the wheel, so hints and grid modes cannot scroll.**
+The DirectComposition overlay is a full-screen `WS_EX_TRANSPARENT` window that is
+not layered. Wheel routing resolves its target the way `WindowFromPoint` does,
+which ignores `WM_NCHITTEST`, so answering `HTTRANSPARENT`, the answer that makes
+the overlay click-through for everything else, does not hand the wheel on. The
+overlay absorbs it and nothing underneath moves. Scroll mode is exempt because it
+draws nothing on the shared window there (every indicator is a window of its
+own), so the backend hides that window on the way into the mode
+(`SwitchTo` in `adapter/overlay/windows/manager.go`). Hints and grid do draw on
+it, so it stays up and a `scroll_*` action bound in those modes does nothing on
+the vertical axis. Horizontal keeps working, because the `ScrollPattern` route
+above goes through UI Automation and never touches input routing at all.
+
+Shaping the window's region to the union of the drawn rects would let the wheel
+through the gaps, and was rejected for it: the dead zones would sit under the
+hint labels and grid lines with nothing to mark them, which is harder to live
+with than an axis that is uniformly dead while an overlay is up. The GDI fallback
+path is unaffected either way, since layered-plus-transparent is the combination
+Windows documents as click-through and it behaves as documented.
 
 **Units:** a caller's delta is in pixels. macOS injects those pixels literally
 through `kCGScrollEventUnitPixel`; Windows and Linux each divide by their own
@@ -1463,6 +1483,12 @@ working, which is exactly why the build exists.
 4. Smooth cursor and smooth scroll animation — not implemented
 5. `neru services` — every subcommand returns `CodeNotSupported`, where macOS
    installs a launchd agent and Linux a systemd user unit
+6. Vertical scroll while a hints or grid overlay is up. The overlay is the
+   wheel's routing target and absorbs it, so a `scroll_down` bound in those
+   modes moves nothing, and `neru action scroll_down` from the CLI does nothing
+   while they are on screen. Scroll mode is exempt and the horizontal axis is
+   unaffected; [Input Injection](#input-injection) says why, and why shaping the
+   overlay's region was the wrong way to close it
 
 **macOS**
 
