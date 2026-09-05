@@ -36,9 +36,18 @@ const (
 	wmLButtonUp   = 0x0202
 	wmContextMenu = 0x007B
 
-	nimAdd    = 0x0000
-	nimModify = 0x0001
-	nimDelete = 0x0002
+	nimAdd        = 0x0000
+	nimModify     = 0x0001
+	nimDelete     = 0x0002
+	nimSetVersion = 0x0004
+
+	// notifyIconVersion is NOTIFYICON_VERSION, announced right after the add.
+	// Until a version is announced the shell holds the icon to its pre-5.0
+	// contract, and on Windows 10 and 11 that contract has no balloon at all:
+	// Shell_NotifyIcon accepts NIM_MODIFY with NIF_INFO, returns TRUE, and
+	// draws nothing. Version 3 rather than 4 because 4 also redefines the
+	// callback's wParam and lParam, and the balloon is all this buys.
+	notifyIconVersion = 3
 
 	nifMessage = 0x0001
 	nifIcon    = 0x0002
@@ -203,7 +212,7 @@ var (
 	trayHWND       uintptr
 	trayThreadID   uint32
 	trayStarted    bool
-	trayIconShown  bool
+	trayBalloonOK  bool
 	trayQuit       bool
 	trayIconHandle uintptr
 	trayNID        notifyIconData
@@ -466,13 +475,14 @@ func SetTemplateIcon(iconBytes []byte, template bool) {
 // TrayState reports (started, shown): whether this process has started its tray loop and
 // whether the shell currently holds its icon. started is false in a process
 // that never runs a tray, such as the CLI, so a caller can tell "not shown"
-// from "not knowable here". shown tracks the NIM_ADD result, so a headless
-// run (systray.enabled = false) and a failed registration read the same.
+// from "not knowable here". shown tracks whether the icon can anchor a balloon,
+// so a headless run (systray.enabled = false) and a failed registration read
+// the same.
 func TrayState() (bool, bool) {
 	trayMu.Lock()
 	defer trayMu.Unlock()
 
-	return trayStarted, trayIconShown
+	return trayStarted, trayBalloonOK
 }
 
 // noTrayIconDetail is the reason a notification cannot be shown without a
@@ -492,7 +502,7 @@ func ShowBalloon(title, message string) error {
 	trayMu.Lock()
 	defer trayMu.Unlock()
 
-	if !trayIconShown {
+	if !trayBalloonOK {
 		return derrors.New(derrors.CodeNotSupported, noTrayIconDetail)
 	}
 
@@ -679,7 +689,21 @@ func addTrayIcon() {
 	// later, Explorer starting after neru, arrives as TaskbarCreated, which
 	// re-enters this function.
 	trayIconErr = shellNotify(nimAdd, &trayNID)
-	trayIconShown = trayIconErr == nil
+	trayBalloonOK = trayIconErr == nil && announceIconVersion() == nil
+}
+
+// announceIconVersion tells the shell which Shell_NotifyIcon contract this icon
+// speaks. A refusal costs the balloon and nothing else, so it does not touch
+// trayIconErr: the icon is on the taskbar either way.
+func announceIconVersion() error {
+	version := notifyIconData{
+		cbSize:   uint32(unsafe.Sizeof(notifyIconData{})),
+		hWnd:     trayNID.hWnd,
+		uID:      trayNID.uID,
+		uVersion: notifyIconVersion,
+	}
+
+	return shellNotify(nimSetVersion, &version)
 }
 
 // IconStatus reports what the notification area said about the tray icon: nil
@@ -708,7 +732,7 @@ func removeTrayIcon() {
 	// Nothing to report on the way out: the process is exiting either way, and
 	// an icon that was never accepted has nothing to delete.
 	_ = shellNotify(nimDelete, &trayNID)
-	trayIconShown = false
+	trayBalloonOK = false
 }
 
 // loadBrandIcon builds an HICON from the embedded brand PNG, falling back to
