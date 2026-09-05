@@ -3,6 +3,9 @@
 package windows
 
 import (
+	"errors"
+	"fmt"
+
 	"github.com/y3owk1n/neru/internal/adapter/platform/modifierstate"
 	"github.com/y3owk1n/neru/internal/domain/action"
 )
@@ -193,6 +196,48 @@ func injectModifier(edit modifierstate.Edit, pressed bool) {
 	}
 
 	_ = sendKeyboardInput(virtualKey, !pressed, extended)
+}
+
+var errUnknownModifier = errors.New("unknown modifier")
+
+// PostModifierKey presses or releases the canonical key for one modifier, named
+// in Neru's vocabulary (shift, ctrl, alt, cmd), as if the user had.
+//
+// It is what the event tap's PostModifierEvent injects with: a sticky modifier
+// is a real key held on the user's behalf, and SendInput is the only way to hold
+// one. The event carries neruInjectedTag like every other injection here, so the
+// keyboard hook hands it on rather than reading it back as a toggle.
+//
+// The canonical key for each modifier is the left one, and its extended flag
+// comes from the key table rather than a literal: VK_LWIN is in the extended
+// range, and the other three are not.
+func PostModifierKey(modifier string, isDown bool) error {
+	var virtualKey uint16
+
+	switch modifier {
+	case modNameShift:
+		virtualKey = vkLShift
+	case modNameCtrl:
+		virtualKey = vkLControl
+	case modNameAlt:
+		virtualKey = vkLMenu
+	case modNameCmd:
+		virtualKey = vkLWin
+	default:
+		return fmt.Errorf("%w: %q", errUnknownModifier, modifier)
+	}
+
+	var extended bool
+
+	for _, key := range windowsModifierKeys {
+		if key.virtualKey == virtualKey {
+			extended = key.extended
+
+			break
+		}
+	}
+
+	return sendKeyboardInput(virtualKey, !isDown, extended)
 }
 
 // modifierKeyState reads the live keyboard and reports every modifier key on it.
