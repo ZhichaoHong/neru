@@ -129,24 +129,37 @@ func sendMouseInput(flags uint32, data uint32) error {
 	return sendOneInput(unsafe.Pointer(&event), unsafe.Sizeof(event))
 }
 
-// sendKeyboardInput presses or releases one virtual key. extended addresses the
-// keys whose scancode Windows only resolves with KEYEVENTF_EXTENDEDKEY.
-func sendKeyboardInput(virtualKey uint16, isUp bool, extended bool) error {
+// sendKeyEvent posts one KEYBDINPUT record, tagged as Neru's own so the
+// keyboard hook does not read it back as the user typing.
+func sendKeyEvent(virtualKey uint16, scanCode uint16, flags uint32) error {
 	var event keyInput
 
 	event.inputType = inputKeyboard
 	event.ki.wVk = virtualKey
+	event.ki.wScan = scanCode
+	event.ki.dwFlags = flags
 	event.ki.dwExtraInfo = neruInjectedTag
 
-	if extended {
-		event.ki.dwFlags |= keyeventfExtendedKey
-	}
-
-	if isUp {
-		event.ki.dwFlags |= keyeventfKeyUp
-	}
-
 	return sendOneInput(unsafe.Pointer(&event), unsafe.Sizeof(event))
+}
+
+// sendKeyboardInput presses or releases one virtual key. extended addresses the
+// keys whose scancode Windows only resolves with KEYEVENTF_EXTENDEDKEY.
+func sendKeyboardInput(virtualKey uint16, isUp bool, extended bool) error {
+	flags := keyUpFlag(isUp)
+	if extended {
+		flags |= keyeventfExtendedKey
+	}
+
+	return sendKeyEvent(virtualKey, 0, flags)
+}
+
+func keyUpFlag(isUp bool) uint32 {
+	if isUp {
+		return keyeventfKeyUp
+	}
+
+	return 0
 }
 
 // MoveMouseTo moves the cursor to the given screen point.

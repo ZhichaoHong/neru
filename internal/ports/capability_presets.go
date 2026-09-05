@@ -211,9 +211,7 @@ func WindowsCapabilities() PlatformCapabilities {
 				"capture; text only, with no rectangle detection and no confidence " +
 				"score; needs OCR language data for at least one language installed",
 		),
-		KeyFeed: stubCapability(
-			"key injection not implemented yet; target SendInput",
-		),
+		KeyFeed: supportedCapability("key injection available via SendInput"),
 		Systray: supportedCapability(
 			"tray icon available via the Win32 notification area (Shell_NotifyIcon)",
 		),

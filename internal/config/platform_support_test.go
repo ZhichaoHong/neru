@@ -225,15 +225,12 @@ func TestInertWords_Steps(t *testing.T) {
 			want:   []string{hideCursorAction},
 		},
 		{
-			name:   "an action Windows cannot inject is reported there",
+			// feed was the last action with a narrower column than the rest.
+			// Windows injects it through SendInput now, so it is reported
+			// nowhere — worth asserting on the platform that used to report it.
+			name:   "the action that used to be inert on Windows is silent there",
 			steps:  []string{"action feed"},
 			target: parity.Windows,
-			want:   []string{"feed"},
-		},
-		{
-			name:   "the same action is silent on Linux",
-			steps:  []string{"action feed"},
-			target: parity.Linux,
 			want:   nil,
 		},
 		{
