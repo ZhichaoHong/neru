@@ -348,13 +348,7 @@ func wlrootsScrollAxis(axis int, delta int) error {
 		totalNotches = 1
 	}
 
-	step := -wlrootsScrollStep
-
-	disc := 1
-	if delta < 0 {
-		step = -step
-		disc = -disc
-	}
+	step, disc := wlrootsScrollNotch(delta, wlrootsScrollStep)
 
 	deltas := make([]int, 0, wlrootsScrollMaxEvents)
 	discretes := make([]int, 0, wlrootsScrollMaxEvents)

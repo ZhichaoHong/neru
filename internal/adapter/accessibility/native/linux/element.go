@@ -591,14 +591,7 @@ func scrollAtCursorNow(deltaX, deltaY int, modifiers action.Modifiers) error {
 				}
 			}
 
-			notchesSent := totalNotches - remainingNotches
-
-			pixelsSent := notchesSent * scrollScale
-			if delta > 0 {
-				return max(delta-pixelsSent, 0)
-			}
-
-			return min(delta+pixelsSent, 0)
+			return uinputScrollRemainder(delta, totalNotches, remainingNotches, scrollScale)
 		}
 
 		remainY := sendScaledScroll(uinputScrollAxisVertical, deltaY)
@@ -626,6 +619,50 @@ func scrollAtCursorNow(deltaX, deltaY int, modifiers action.Modifiers) error {
 	}
 
 	return nil
+}
+
+// uinputScrollRemainder is the part of a scroll the uinput wheel did not
+// send, in the caller's pixels, for the virtual pointer to finish.
+//
+// It is zero whenever every notch went out, even when the delta was not a
+// whole number of notches: a 50 px step is one 30 px notch, and the 20 px
+// left over is rounding, not a lost scroll. Handing it on used to add a
+// second, opposite-signed notch to every press on Hyprland, which Chromium
+// and Electron clients summed to nothing.
+func uinputScrollRemainder(delta, totalNotches, remainingNotches, scale int) int {
+	if remainingNotches == 0 {
+		return 0
+	}
+
+	pixelsSent := (totalNotches - remainingNotches) * scale
+	if delta > 0 {
+		return max(delta-pixelsSent, 0)
+	}
+
+	return min(delta+pixelsSent, 0)
+}
+
+// wlrootsScrollNotch is one wheel notch for the virtual pointer: the pixel
+// step and the discrete count, in the Wayland convention where positive is
+// down on the vertical axis and right on the horizontal one. The caller's
+// delta is positive-up and positive-left, so the step is negated on both
+// axes, which is the same conversion the continuous path applies.
+//
+// The discrete count follows the step rather than the delta: a count that
+// disagrees with the step makes a client reading axis_value120 scroll the
+// opposite way from one reading axis.
+func wlrootsScrollNotch(delta, step int) (int, int) {
+	step = -step
+	if delta < 0 {
+		step = -step
+	}
+
+	disc := 1
+	if step < 0 {
+		disc = -1
+	}
+
+	return step, disc
 }
 
 // uinputScrollFallbackOnce keeps the fallback warning to one line per
