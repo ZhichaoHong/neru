@@ -182,7 +182,7 @@ that is what [Known Gaps](#known-gaps) tracks, per
 | **Smooth cursor animation**   | ✅ (incl. relative, opt-in) | ✅ incl. relative, opt-in | ✅ incl. relative, opt-in | ✅ incl. relative, opt-in | ❌                        |
 | **Smooth scroll animation**   | ✅                       | ⚠️ whole notches only ⁴ | ✅ continuous virtual-pointer axis ⁴ (whole notches when modified on Hyprland ¹³) | ⚠️ libei scroll delta, unverified ⁴ | ❌       |
 | **Element discovery (hints)** | ✅ AXUIElement           | ⚠️ AT-SPI walk         | ⚠️ AT-SPI walk               | ⚠️ AT-SPI walk          | ⚠️ UIA, control view only    |
-| **Overlay**                   | ✅ NSPanel + CoreAnimation | ✅ X11 + Cairo       | ✅ layer-shell + Cairo       | ✅ layer-shell + Cairo  | ✅ layered HWND + GDI        |
+| **Overlay**                   | ✅ NSPanel + CoreAnimation | ✅ X11 + Cairo       | ✅ layer-shell + Cairo       | ✅ layer-shell + Cairo  | ✅ DirectComposition + Direct2D (GDI fallback; windows/arm64 is GDI only ¹⁴) |
 | **Global hotkeys**            | ✅ per-key CGEventTap    | ✅ `XGrabKey`          | ⚠️ passive evdev read        | ⚠️ passive evdev read   | ✅ `RegisterHotKey`          |
 | **Keyboard capture**          | ✅ CGEventTap            | ✅ `XGrabKeyboard`     | ✅ evdev grab (wl-keyboard fallback) | ✅ evdev grab   | ✅ `WH_KEYBOARD_LL`          |
 | **Modifier passthrough**      | ✅                       | ❌                     | ✅ evdev backend only        | ✅ evdev backend only   | ✅ `WH_KEYBOARD_LL` forwards or blocks per event |
@@ -227,8 +227,9 @@ Linux baseline is itself missing, fontconfig chooses that machine's generic, so
 the fallback is always a family it has. Segoe UI ships with every supported
 Windows. macOS, the non-CGO Linux build, and a build whose fontconfig or GDI
 cannot be consulted at all check nothing: they hand the written name to NSFont
-/ GDI / Cairo, which substitute when the text is drawn — as Cairo and GDI do for
-whichever name they are given.
+/ DirectWrite / Cairo, which substitute when the text is drawn - as Cairo and
+DirectWrite do for whichever name they are given, and as GDI does on the Windows
+fallback surface.
 
 Which names count as generic is the same on all three: `sans`, `sans serif`,
 `serif`, `mono`, `monospace` and the empty string, matched ignoring case,
@@ -564,6 +565,14 @@ ceasing to apply to one binding. The compositor is named from
 `XDG_CURRENT_DESKTOP` beside the backend detection and not from
 `HYPRLAND_INSTANCE_SIGNATURE`, which says which compositor is reachable rather
 than which one is running.
+
+¹⁴ **windows/arm64 draws through the GDI surface only.** The Direct2D binding is
+pure Go, and Direct2D takes its geometry as floats. Go's stdcall shim mirrors
+integer arguments into the XMM registers on amd64 alone, which is what makes
+passing a float through it work there and nowhere else, so the DirectComposition
+surface is built for amd64 and arm64 gets the layered-window fallback
+(`platform/windows/overlay_dcomp_other.go`). Both surfaces draw the same command
+queue, so the difference is throughput, not appearance.
 
 ### Notes on the ⚠️ entries
 
@@ -1117,19 +1126,19 @@ important thing to know before touching overlay code:
 
 | Aspect                | macOS                                    | Linux X11                              | Linux Wayland                                   | Windows                            |
 | --------------------- | ---------------------------------------- | -------------------------------------- | ------------------------------------------------ | ---------------------------------- |
-| **Window type**       | NSPanel, borderless non-activating       | override-redirect X11 window           | `wlr_layer_shell_v1` overlay surface             | layered `WS_POPUP` HWND            |
-| **Rendering**         | CoreAnimation (CALayer, GPU)             | Cairo on an Xlib surface (CPU)         | Cairo into SHM buffers (CPU)                     | GDI + software SDF, BGRA (CPU)     |
-| **Per-pixel alpha**   | clear color + non-opaque layer           | `CAIRO_OPERATOR_CLEAR`                 | `CAIRO_OPERATOR_CLEAR`                           | `AC_SRC_ALPHA` via `UpdateLayeredWindow` |
-| **Click-through**     | `setIgnoresMouseEvents:YES`              | XFixes empty input region              | empty `wl_surface` input region                  | `WS_EX_TRANSPARENT`                |
+| **Window type**       | NSPanel, borderless non-activating       | override-redirect X11 window           | `wlr_layer_shell_v1` overlay surface             | `WS_POPUP` HWND, `WS_EX_NOREDIRECTIONBITMAP` (layered on the GDI fallback) |
+| **Rendering**         | CoreAnimation (CALayer, GPU)             | Cairo on an Xlib surface (CPU)         | Cairo into SHM buffers (CPU)                     | Direct2D on a DirectComposition swapchain (GPU); GDI + software SDF on the fallback (CPU) |
+| **Per-pixel alpha**   | clear color + non-opaque layer           | `CAIRO_OPERATOR_CLEAR`                 | `CAIRO_OPERATOR_CLEAR`                           | premultiplied swapchain; `AC_SRC_ALPHA` via `UpdateLayeredWindowIndirect` on the fallback |
+| **Click-through**     | `setIgnoresMouseEvents:YES`              | XFixes empty input region              | empty `wl_surface` input region                  | `WS_EX_TRANSPARENT` + `HTTRANSPARENT`  |
 | **Always on top**     | `NSScreenSaverWindowLevel`               | `_NET_WM_STATE_ABOVE` + `MapRaised`    | overlay layer                                    | `HWND_TOPMOST`                     |
 | **Focus prevention**  | non-activating panel                     | `override_redirect=YES`                | controlled keyboard interactivity                | `WS_EX_NOACTIVATE`                 |
 | **HiDPI**             | dynamic `contentsScale` + backing-change callback | `Xft.dpi`, one global factor  | `wl_output` scale + `wp_fractional_scale_v1` / `wp_viewporter` | `GetDpiForMonitor`, per monitor |
 | **Multi-monitor**     | per-display clamping, screen-change tracking | all monitors enumerated, per-monitor render, live RandR hotplug | one `wl_surface` per output (max 16), live hotplug | cursor-screen tracking, separate indicator/sticky windows |
-| **Buffers**           | layer-backed, OS-managed                 | single Cairo surface                   | triple-buffered SHM pool                         | single pixel buffer                |
-| **Rounded rects / borders** | NSBezierPath                       | Cairo arc path + stroke                | Cairo arc path + stroke                          | software SDF fill + multi-pass stroke |
-| **Text**              | NSFontManager                            | Cairo `select_font_face` / `show_text` | Cairo `select_font_face` / `show_text`           | GDI `CreateFontW` + `DrawTextW` + alpha composite |
-| **Coordinate origin** | bottom-left (Y-flipped in the adapter)   | top-left                               | top-left                                         | top-left (negative DIB height)     |
-| **Thread model**      | main-thread dispatch                     | `renderMu` mutex                       | `renderMu` mutex (also guards `wl_display`)      | dedicated UI thread (`LockOSThread`) |
+| **Buffers**           | layer-backed, OS-managed                 | single Cairo surface                   | triple-buffered SHM pool                         | canvas bitmap + 2-buffer flip swapchain; one persistent DIB on the fallback |
+| **Rounded rects / borders** | NSBezierPath                       | Cairo arc path + stroke                | Cairo arc path + stroke                          | Direct2D rounded rects; software SDF on the fallback |
+| **Text**              | NSFontManager                            | Cairo `select_font_face` / `show_text` | Cairo `select_font_face` / `show_text`           | DirectWrite text formats, cached per family, size and weight; cached GDI fonts + `DrawTextW` on the fallback |
+| **Coordinate origin** | bottom-left (Y-flipped in the adapter)   | top-left                               | top-left                                         | top-left (negative DIB height on the fallback) |
+| **Thread model**      | main-thread dispatch                     | `renderMu` mutex                       | `renderMu` mutex (also guards `wl_display`)      | dedicated UI thread (`LockOSThread`); draws queue and return, the thread presents |
 
 ### HiDPI
 
@@ -1657,6 +1666,7 @@ violation fails `just test` rather than review:
 | `*_linux.go`                      | Linux, with no backend axis to split on                   |
 | `*_other.go`                      | non-target fallback for dispatch-style packages           |
 | `*_unix.go`                       | the `!windows` side of a split (established Go convention) |
+| `*_<goarch>.go` + `*_other.go`    | an architecture split inside a one-platform directory: Go's own arch token on the file that needs it, `_other.go` for the rest (`platform/windows/overlay_dcomp_amd64.go`) |
 | `*_linux_common.go`               | Linux-shared wrapper, fallback, or backend routing        |
 | `*_linux_x11.go`                  | X11                                                       |
 | `*_linux_wayland.go`              | Wayland                                                   |

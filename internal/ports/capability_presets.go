@@ -178,7 +178,7 @@ func WindowsCapabilities() PlatformCapabilities {
 			"clickable-element discovery available via UI Automation (initial coverage)",
 		),
 		Overlay: supportedCapability(
-			"native overlays available via layered Win32 window + GDI",
+			"native overlays available via DirectComposition + Direct2D (GDI fallback)",
 		),
 		Notifications: supportedCapability(
 			"notifications shown as balloon tips on the tray icon (Shell_NotifyIcon " +
