@@ -37,6 +37,10 @@ var compositeRoles = map[string]struct{}{
 //
 // One level only. The parts of a composite control are its direct children, and
 // each level below that is scaffolding rather than something to click.
+//
+// The parts are read live. The wrapper came out of a cache request, but a child
+// the walker navigated to was never in it, so only the Current* getters can
+// answer for one.
 func hiddenParts(
 	walker, wrapper unsafe.Pointer,
 	wrapperName string,
@@ -63,7 +67,7 @@ func hiddenParts(
 	var parts []winElement
 
 	for child != nil {
-		extracted, ok := extractWinElement(child, keptRoles)
+		extracted, ok := extractWinElement(child, liveGetters, keptRoles)
 		if ok {
 			if inheritable && extracted.name == "" {
 				extracted.name = wrapperName

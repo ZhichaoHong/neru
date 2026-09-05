@@ -181,7 +181,7 @@ that is what [Known Gaps](#known-gaps) tracks, per
 | **Modified scroll (`--modifier`)** | ✅ `CGEventSetFlags` on every chunk | ✅ XTest key hold ⁸ | ✅ virtual keyboard, uinput batch skipped | ✅ libei | ✅ `SendInput` key hold ¹⁰ |
 | **Smooth cursor animation**   | ✅ (incl. relative, opt-in) | ✅ incl. relative, opt-in | ✅ incl. relative, opt-in | ✅ incl. relative, opt-in | ❌                        |
 | **Smooth scroll animation**   | ✅                       | ⚠️ whole notches only ⁴ | ✅ continuous virtual-pointer axis ⁴ | ⚠️ libei scroll delta, unverified ⁴ | ❌       |
-| **Element discovery (hints)** | ✅ AXUIElement           | ⚠️ AT-SPI walk         | ⚠️ AT-SPI walk               | ⚠️ AT-SPI walk          | ⚠️ UIA, shallow tree         |
+| **Element discovery (hints)** | ✅ AXUIElement           | ⚠️ AT-SPI walk         | ⚠️ AT-SPI walk               | ⚠️ AT-SPI walk          | ⚠️ UIA, control view only    |
 | **Overlay**                   | ✅ NSPanel + CoreAnimation | ✅ X11 + Cairo       | ✅ layer-shell + Cairo       | ✅ layer-shell + Cairo  | ✅ layered HWND + GDI        |
 | **Global hotkeys**            | ✅ per-key CGEventTap    | ✅ `XGrabKey`          | ⚠️ passive evdev read        | ⚠️ passive evdev read   | ✅ `RegisterHotKey`          |
 | **Keyboard capture**          | ✅ CGEventTap            | ✅ `XGrabKeyboard`     | ✅ evdev grab (wl-keyboard fallback) | ✅ evdev grab   | ✅ `WH_KEYBOARD_LL`          |
@@ -905,9 +905,12 @@ macOS builds the richest tree by a wide margin: it walks multiple window and
 system sources, applies per-app strategy overrides, can fall back to the Vision
 framework for OCR-discovered targets, and deduplicates overlapping elements.
 Linux walks a single tree and has the OCR fallback beside it - tesseract, text
-only, selected with `hints.strategy = vision`. Windows is the same shape: a
-shallow walk of the root's children, with `Windows.Media.Ocr` beside it under the
-same option.
+only, selected with `hints.strategy = vision`. Windows fetches the window's
+control-view tree in one cached UI Automation query, at any depth, with the same
+fallback beside it - `Windows.Media.Ocr`, text only. The ⚠️ there is the control
+view: an element a provider exposes only in the raw view is not a hint unless it
+is part of a composite control neru descends into, and the answer is a role or
+filter default, never a per-app branch.
 
 **All three take `hints.strategy = hybrid`**, which runs the tree walk and the
 recognition on every activation and merges them, the tree winning any overlap.
@@ -1163,8 +1166,8 @@ discovery rather than the mode itself.
 
 | Mode              | Feature                        | macOS                      | Linux                      | Windows                     |
 | ----------------- | ------------------------------ | -------------------------- | -------------------------- | --------------------------- |
-| **Hints**         | Element discovery              | ✅ full AX tree            | ⚠️ AT-SPI, toolkit-dependent | ⚠️ UIA, shallow tree      |
-| **Hints**         | `vision` strategy + per-app overrides | ✅                  | ⚠️ tesseract; text only, no rectangles | ❌ macOS-only   |
+| **Hints**         | Element discovery              | ✅ full AX tree            | ⚠️ AT-SPI, toolkit-dependent | ⚠️ UIA, control view only |
+| **Hints**         | `vision` strategy + per-app overrides | ✅                  | ⚠️ tesseract; text only, no rectangles | ⚠️ `Windows.Media.Ocr`; text only, no rectangles, no confidence |
 | **Hints**         | Menubar / dock elements        | ✅                         | 🟡                         | 🟡                          |
 | **Hints**         | Search input badge             | ✅                         | ✅ Cairo badge             | ✅                          |
 | **Hints**         | Label arrow / tail             | ✅ NSBezierPath            | ✅ Cairo triangle          | ✅ sampled triangle, see below |
@@ -1420,13 +1423,12 @@ working, which is exactly why the build exists.
    launch and termination never fire, so nothing keyed on a process appearing or
    going away works here; Mission Control is macOS-only by definition and its
    options are declared so
-2. UIA tree depth — shallow walk; complex apps under-report clickable elements
-3. Grid and recursive-grid transition animation — not implemented
-4. Grid virtual-pointer indicator — a no-op, while recursive grid draws it.
+2. Grid and recursive-grid transition animation — not implemented
+3. Grid virtual-pointer indicator — a no-op, while recursive grid draws it.
    `virtual_pointer.ui.*` is therefore partly inert here rather than wholly, so
    it stays declared everywhere and is tracked as this entry instead
-5. Smooth cursor and smooth scroll animation — not implemented
-6. `neru services` — every subcommand returns `CodeNotSupported`, where macOS
+4. Smooth cursor and smooth scroll animation — not implemented
+5. `neru services` — every subcommand returns `CodeNotSupported`, where macOS
    installs a launchd agent and Linux a systemd user unit
 
 **macOS**

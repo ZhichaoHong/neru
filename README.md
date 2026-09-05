@@ -245,8 +245,8 @@ on the app exposing an accessibility tree (GTK/Qt do; Chromium and Electron apps
 need `--force-renderer-accessibility`). Where that tree is too thin, Vision OCR
 is the fallback — tesseract, text only, and on KDE behind a one-time
 screen-sharing prompt, because KWin's only pixel source is the desktop portal.
-On **Windows**, UI Automation coverage is initial and the
-tree walk is shallow, and per-app config does not re-apply when you change
+On **Windows**, UI Automation reports the control view only,
+and per-app config does not re-apply when you change
 windows. Vision OCR is the fallback there too - `Windows.Media.Ocr`, text only,
 needing an OCR language feature installed and reporting no confidence score, so
 `minimum_confidence` does nothing and `button_min_confidence` defaults to `0`.

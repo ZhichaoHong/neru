@@ -102,10 +102,10 @@ Accepted by every command.
 | [`docs`](#neru-docs)                                         | Open documentation in a browser | No  | macOS · Linux |
 
 ¹ Element discovery quality differs by platform: a full accessibility tree on
-macOS, an AT-SPI walk on Linux whose coverage depends on the application, and an
-initial shallow UI Automation walk on Windows. The `vision` and `hybrid`
-strategies are the fallback where that tree is thin, on all three, with a
-different recognition engine behind them on each. See
+macOS, an AT-SPI walk on Linux whose coverage depends on the application, and a
+cached UI Automation walk of the control view on Windows. The `vision` and
+`hybrid` strategies are the fallback where that tree is thin, on all three, with
+a different recognition engine behind them on each. See
 [Accessibility and hints](CROSS_PLATFORM.md#accessibility-and-hints).
 
 ² Two action subcommands are limited: `hide_cursor` and `show_cursor` are macOS
