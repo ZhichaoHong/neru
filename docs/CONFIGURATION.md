@@ -100,9 +100,9 @@ Three cases the platform column cannot state, because support is partial rather
 than absent:
 
 - `general.passthrough_unbounded_keys` and `general.should_exit_after_passthrough`
-  reach the focused application on macOS and on the Wayland evdev tap, but not
-  on X11 — the display server cannot pass a grabbed chord through at all — and
-  not on Windows.
+  reach the focused application on macOS, on the Wayland evdev tap and on
+  Windows, but not on X11 — the display server cannot pass a grabbed chord
+  through at all.
 - `[virtual_pointer]` styles two things. The standalone overlay is macOS-only
   (it pairs with system cursor hiding, a
   [platform exclusive](CROSS_PLATFORM.md#platform-exclusives)), while these same
