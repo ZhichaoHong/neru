@@ -187,7 +187,7 @@ that is what [Known Gaps](#known-gaps) tracks, per
 | **Keyboard capture**          | ✅ CGEventTap            | ✅ `XGrabKeyboard`     | ✅ evdev grab (wl-keyboard fallback) | ✅ evdev grab   | ✅ `WH_KEYBOARD_LL`          |
 | **Modifier passthrough**      | ✅                       | ❌                     | ✅ evdev backend only        | ✅ evdev backend only   | ✅ `WH_KEYBOARD_LL` forwards or blocks per event |
 | **Dark mode detection**       | ✅ Cocoa appearance      | ✅ xdg appearance portal | ✅ xdg appearance portal   | ✅ kdeglobals + portal  | ✅ registry                  |
-| **Font resolution**           | ✅ NSFont                | ✅ fontconfig          | ✅ fontconfig                | ✅ fontconfig           | ⚠️ generic-alias map only ²  |
+| **Font resolution**           | ✅ NSFont                | ✅ fontconfig          | ✅ fontconfig                | ✅ fontconfig           | ✅ GDI `EnumFontFamiliesExW` ² |
 | **System tray**               | ✅ NSStatusItem ⁹        | ✅ D-Bus StatusNotifierItem ⁹ | ✅ StatusNotifierItem ⁹      | ✅ StatusNotifierItem ⁹ | ✅ Win32 notification area ⁹ |
 | **Native alerts**             | ✅ NSAlert               | ⚠️ D-Bus, not modal    | ⚠️ D-Bus, not modal          | ⚠️ D-Bus, not modal     | ✅ `MessageBoxW`             |
 | **Native notifications**      | ✅ UNNotification        | ✅ `org.freedesktop.Notifications` | ✅ `org.freedesktop.Notifications` | ✅ `org.freedesktop.Notifications` | ✅ Tray balloon tips ⁹ |
@@ -210,25 +210,25 @@ keymap asks each time it settles — which means overrides settle **when the mod
 opens** rather than the instant you switch apps. No platform is asked on a
 keystroke; ADR 0005 has the reasoning.
 
-² macOS and Linux resolve font *families* through the OS (NSFont, fontconfig).
-Windows only maps the generic aliases `sans` / `serif` / `mono` to Segoe UI /
-Cambria / Consolas and passes every other name straight to GDI without checking
-it; an unavailable family falls back to whatever GDI substitutes.
+² Every platform resolves font *families* through the OS: NSFont on macOS,
+fontconfig on Linux, GDI's `EnumFontFamiliesExW` on Windows.
 
 A family somebody named resolves to **that name**: the answer is the family the
-config asked for, not the family the platform would render in its place. The one
-exception is Linux with fontconfig, the only backend that can tell an installed
-family from a missing one — a missing one falls back to DejaVu Sans rather than
-to fontconfig's own substitution for the name, so `font_family = "Arial"`
-without Arial installed reports DejaVu Sans and not the Liberation Sans
+config asked for, not the family the platform would render in its place. The
+exception is a family the platform can see is missing, which the two backends
+that can tell an installed family from a missing one — Linux with fontconfig
+and Windows — send to the sans baseline rather than to the platform's own
+substitution for the name, so `font_family = "Arial"` without Arial installed
+reports DejaVu Sans on Linux and Segoe UI on Windows, not the Liberation Sans
 `fc-match Arial` names. It is the sans baseline whatever face the name asked
 for: the serif and mono baselines are what the `serif` and `mono` aliases
-resolve to, so a missing `Times New Roman` also lands on DejaVu Sans. Where the
-baseline is itself missing, fontconfig chooses that machine's generic, so the
-fallback is always a family it has. macOS, Windows, the non-CGO Linux build, and a CGO build whose
-fontconfig cannot be consulted at all check nothing: they hand the written name
-to NSFont / GDI / Cairo, which substitute when the text is drawn — as Cairo does
-on Linux too, for whichever name it is given.
+resolve to, so a missing `Times New Roman` also lands on the sans one. Where the
+Linux baseline is itself missing, fontconfig chooses that machine's generic, so
+the fallback is always a family it has. Segoe UI ships with every supported
+Windows. macOS, the non-CGO Linux build, and a build whose fontconfig or GDI
+cannot be consulted at all check nothing: they hand the written name to NSFont
+/ GDI / Cairo, which substitute when the text is drawn — as Cairo and GDI do for
+whichever name they are given.
 
 Which names count as generic is the same on all three: `sans`, `sans serif`,
 `serif`, `mono`, `monospace` and the empty string, matched ignoring case,
@@ -1426,8 +1426,7 @@ working, which is exactly why the build exists.
    `virtual_pointer.ui.*` is therefore partly inert here rather than wholly, so
    it stays declared everywhere and is tracked as this entry instead
 5. Smooth cursor and smooth scroll animation — not implemented
-6. Font resolution — alias mapping only, no system font enumeration
-7. `neru services` — every subcommand returns `CodeNotSupported`, where macOS
+6. `neru services` — every subcommand returns `CodeNotSupported`, where macOS
    installs a launchd agent and Linux a systemd user unit
 
 **macOS**
