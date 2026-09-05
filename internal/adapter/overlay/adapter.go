@@ -128,7 +128,9 @@ func (a *Adapter) ShowFrame(ctx context.Context, frame ports.Frame) error {
 // Linux the mode and sticky-modifier indicators are badges painted on that
 // surface: the shared window's visibility is theirs. Deciding otherwise would
 // encode macOS's one-window-per-indicator model in shared code and leave a
-// Linux user in scroll mode with no indicator after a monitor move.
+// Linux user in scroll mode with no indicator after a monitor move. A backend
+// whose indicators are windows of their own is free to take the shared one back
+// down in its SwitchTo, and the Windows one does.
 //
 // Every mode is named rather than defaulted, so a mode added without an answer
 // here fails the `exhaustive` linter instead of silently inheriting one. The

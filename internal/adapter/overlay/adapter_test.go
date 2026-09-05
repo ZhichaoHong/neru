@@ -123,6 +123,10 @@ type screenManager struct {
 	recursiveGridDraws int
 
 	pointer gridPointerDraw
+
+	// sequence records the window calls in the order they arrived, for the one
+	// test that is about their order rather than their effect.
+	sequence []string
 }
 
 // recursiveGridDraw is one recursive-grid drawn on the overlay, kept as the
@@ -149,7 +153,10 @@ func newScreenManager() *screenManager {
 	return &screenManager{mode: overlay.ModeIdle}
 }
 
-func (m *screenManager) Show() { m.visible = true }
+func (m *screenManager) Show() {
+	m.visible = true
+	m.sequence = append(m.sequence, "Show")
+}
 
 func (m *screenManager) Hide() { m.visible = false }
 
@@ -157,7 +164,10 @@ func (m *screenManager) Clear() { m.cleared++ }
 
 func (m *screenManager) ResizeToActiveScreen() { m.resizes++ }
 
-func (m *screenManager) SwitchTo(next overlay.Mode) { m.mode = next }
+func (m *screenManager) SwitchTo(next overlay.Mode) {
+	m.mode = next
+	m.sequence = append(m.sequence, "SwitchTo")
+}
 
 func (m *screenManager) Mode() overlay.Mode { return m.mode }
 
@@ -1343,6 +1353,32 @@ func TestAdapterClearFrame_TakesTheMonitorPanelsDown(t *testing.T) {
 
 	if manager.hides != 1 {
 		t.Errorf("panels hidden %d times after being drawn, want 1", manager.hides)
+	}
+}
+
+// TestAdapterShowFrame_BringsTheWindowUpBeforeSwitchingMode pins the order of
+// the two window calls, which a backend is entitled to build on.
+//
+// The Windows backend does: scroll mode draws nothing on the shared surface
+// there and an empty full-screen overlay swallows wheel events, so its SwitchTo
+// takes that window back down. Showing after the switch instead would leave the
+// window up in scroll mode and hidden in every mode that draws on it.
+func TestAdapterShowFrame_BringsTheWindowUpBeforeSwitchingMode(t *testing.T) {
+	t.Parallel()
+
+	manager := newScreenManager()
+	adapter := overlay.NewAdapter(manager, testStyles{}, zap.NewNop())
+
+	showErr := adapter.ShowFrame(context.Background(), ports.HintsFrame{
+		Screen: image.Rect(0, 0, 100, 100),
+	})
+	if showErr != nil {
+		t.Fatalf("ShowFrame() error = %v", showErr)
+	}
+
+	want := []string{"Show", "SwitchTo"}
+	if !slices.Equal(manager.sequence, want) {
+		t.Errorf("window calls = %v, want %v", manager.sequence, want)
 	}
 }
 

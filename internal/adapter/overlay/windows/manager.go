@@ -112,6 +112,35 @@ func (m *Manager) Show() {
 	m.win.Show()
 }
 
+// SwitchTo transitions the overlay to a mode, and takes the shared window back
+// down for a mode that draws nothing on it.
+//
+// Scroll mode is the one that draws nothing. On Linux its indicators are badges
+// painted on the shared surface, so that surface has to stay up; here every
+// indicator is a window of its own (indicatorWin and the rest), which leaves a
+// full-screen window over the desktop with nothing in it.
+//
+// That window is not harmless. Wheel routing picks its target the way
+// WindowFromPoint does, ignoring the WM_NCHITTEST answer that makes the overlay
+// click-through, so the empty overlay became the wheel target and the event was
+// dropped: in scroll mode nothing scrolled vertically, neither an injected wheel
+// nor the physical one. Horizontal scroll worked throughout, because it goes
+// through UI Automation instead of the wheel.
+func (m *Manager) SwitchTo(next manager.Mode) {
+	m.Base.SwitchTo(next)
+
+	if next != manager.ModeScroll {
+		return
+	}
+
+	m.renderMu.Lock()
+	defer m.renderMu.Unlock()
+
+	if m.win != nil {
+		m.win.Hide()
+	}
+}
+
 // Hide hides the overlay.
 func (m *Manager) Hide() {
 	m.renderMu.Lock()
