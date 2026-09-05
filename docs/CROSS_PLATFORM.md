@@ -190,7 +190,7 @@ that is what [Known Gaps](#known-gaps) tracks, per
 | **Font resolution**           | ✅ NSFont                | ✅ fontconfig          | ✅ fontconfig                | ✅ fontconfig           | ⚠️ generic-alias map only ²  |
 | **System tray**               | ✅ NSStatusItem ⁹        | ✅ D-Bus StatusNotifierItem ⁹ | ✅ StatusNotifierItem ⁹      | ✅ StatusNotifierItem ⁹ | ✅ Win32 notification area ⁹ |
 | **Native alerts**             | ✅ NSAlert               | ⚠️ D-Bus, not modal    | ⚠️ D-Bus, not modal          | ⚠️ D-Bus, not modal     | ✅ `MessageBoxW`             |
-| **Native notifications**      | ✅ UNNotification        | ✅ `org.freedesktop.Notifications` | ✅ `org.freedesktop.Notifications` | ✅ `org.freedesktop.Notifications` | 🟡          |
+| **Native notifications**      | ✅ UNNotification        | ✅ `org.freedesktop.Notifications` | ✅ `org.freedesktop.Notifications` | ✅ `org.freedesktop.Notifications` | ✅ Tray balloon tips ⁹ |
 | **Secure input detection**    | ✅                       | ➖ always false        | ➖ always false              | ➖ always false         | ➖ always false              |
 | **System cursor hide**        | ✅ `CGDisplayHideCursor` | ➖                     | ➖                           | ➖                      | ➖                           |
 | **`monitor_select` mode**     | ✅ native panels         | ✅ Cairo panels        | ✅ Cairo panels              | ✅ Cairo panels         | ✅ layered-window panels     |
@@ -416,6 +416,15 @@ so the two can never drift apart. It is a color change rather than a
 translucency one on purpose: the icon bytes reach Win32 with straight alpha
 where GDI's icon path wants it premultiplied, so a faded tile would render at
 the host's discretion rather than ours.
+
+**Notifications on Windows are balloon tips on that same tray icon**, sent
+with `Shell_NotifyIcon` and `NIF_INFO`, which Windows 10 and 11 render as
+toasts. WinRT toasts need an AppUserModelID an unpackaged exe does not have,
+and the tray icon is one Neru already owns. The tray is therefore the anchor:
+with `systray.enabled = false` there is nothing to attach a tip to, so
+`ShowNotification` reports `CodeNotSupported` naming that reason and every
+caller logs it rather than dropping the message. Alerts are `MessageBoxW` and
+do not depend on the tray.
 
 **Hover text works everywhere and is the tray icon's**, not a menu item's:
 `NSStatusItem.toolTip`, the SNI `ToolTip` property, and `NOTIFYICONDATA.szTip`
@@ -1412,15 +1421,14 @@ working, which is exactly why the build exists.
    launch and termination never fire, so nothing keyed on a process appearing or
    going away works here; Mission Control is macOS-only by definition and its
    options are declared so
-2. Native notifications — no toast support
-3. UIA tree depth — shallow walk; complex apps under-report clickable elements
-4. Grid and recursive-grid transition animation — not implemented
-5. Grid virtual-pointer indicator — a no-op, while recursive grid draws it.
+2. UIA tree depth — shallow walk; complex apps under-report clickable elements
+3. Grid and recursive-grid transition animation — not implemented
+4. Grid virtual-pointer indicator — a no-op, while recursive grid draws it.
    `virtual_pointer.ui.*` is therefore partly inert here rather than wholly, so
    it stays declared everywhere and is tracked as this entry instead
-6. Smooth cursor and smooth scroll animation — not implemented
-7. Font resolution — alias mapping only, no system font enumeration
-8. `neru services` — every subcommand returns `CodeNotSupported`, where macOS
+5. Smooth cursor and smooth scroll animation — not implemented
+6. Font resolution — alias mapping only, no system font enumeration
+7. `neru services` — every subcommand returns `CodeNotSupported`, where macOS
    installs a launchd agent and Linux a systemd user unit
 
 **macOS**
