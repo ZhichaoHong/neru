@@ -34,6 +34,10 @@ const (
 	mbTopmost       = 0x00040000
 	mbSetForeground = 0x00010000
 
+	// createNoWindow is CREATE_NO_WINDOW: run a console application without
+	// giving it a console.
+	createNoWindow = 0x08000000
+
 	idOK     = 1
 	idCancel = 2
 	idYes    = 6
@@ -71,6 +75,9 @@ func showMessageBox(title, message string, mbType uintptr) int {
 func copyToClipboard(text string) {
 	ctx := context.Background()
 	cmd := exec.CommandContext(ctx, "clip")
+	// clip.exe is a console application, so without this Windows allocates a
+	// console window for it and it flashes on screen next to the dialog.
+	cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: createNoWindow}
 	cmd.Stdin = strings.NewReader(text)
 	_ = cmd.Run()
 }

@@ -340,6 +340,8 @@ func (e *Executor) shell(ctx context.Context, source, actionStr string) error {
 
 	command := exec.CommandContext(execCtx, shell, args...) //nolint:gosec
 
+	hideConsoleWindow(command)
+
 	commandOutput, commandErr := command.CombinedOutput()
 	if commandErr != nil {
 		// The command string and its output are the two things this must not
