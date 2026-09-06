@@ -118,9 +118,11 @@ func ProfileFor(target OS) Profile {
 				Notes:     "Hooks are reachable through Win32/syscall bindings",
 			},
 			Overlay: BackendPlan{
-				Name:      "layered win32 window",
+				Name:      "DirectComposition + Direct2D, GDI fallback",
 				BuildMode: BuildModePureGo,
-				Notes:     "Keep the first overlay implementation CGO-free if practical",
+				Notes: "Layered WS_EX_TRANSPARENT popup either way: the layer is how " +
+					"GDI presents, and the only thing that keeps the window out of " +
+					"hit testing for other processes",
 			},
 			Notifications: BackendPlan{
 				Name:      "tray balloon tips",
