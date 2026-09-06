@@ -130,7 +130,7 @@ func (a *Adapter) ShowFrame(ctx context.Context, frame ports.Frame) error {
 // encode macOS's one-window-per-indicator model in shared code and leave a
 // Linux user in scroll mode with no indicator after a monitor move. A backend
 // whose indicators are windows of their own is free to take the shared one back
-// down in its SwitchTo, and the Windows one does.
+// down in its SwitchTo.
 //
 // Every mode is named rather than defaulted, so a mode added without an answer
 // here fails the `exhaustive` linter instead of silently inheriting one. The
