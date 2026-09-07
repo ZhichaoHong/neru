@@ -19,7 +19,6 @@ func newTestAdapter(t *testing.T) *accessibility.Adapter {
 		nil,
 		[]string{"AXButton"},
 		&accessibility.MockAXClient{},
-		false,
 	)
 }
 

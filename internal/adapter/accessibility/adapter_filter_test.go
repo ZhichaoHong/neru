@@ -72,7 +72,7 @@ func newFilterAdapter(t *testing.T) *accessibility.Adapter {
 		MockClickableNodes:  filterTestNodes(),
 	}
 
-	return accessibility.NewAdapter(zap.NewNop(), nil, nil, client, false)
+	return accessibility.NewAdapter(zap.NewNop(), nil, nil, client)
 }
 
 // idsOf returns element IDs in the order the adapter produced them.
@@ -175,6 +175,51 @@ func TestAdapter_ClickableElements_FilterContract(t *testing.T) {
 	}
 }
 
+// TestAdapter_ClickableElements_DetectMissionControlRidesTheFilter pins that one
+// adapter answers two filters differently, which is what lets a reload of
+// hints.detect_mission_control take effect: the adapter holds no copy of the flag
+// to go stale. The old shape took it in NewAdapter, so this test could not have
+// been written against it at all.
+//
+// The assertion is on the elements, not on a call: with Mission Control up, a
+// collection that detects it skips the frontmost window, and one that does not
+// walks that window as usual.
+func TestAdapter_ClickableElements_DetectMissionControlRidesTheFilter(t *testing.T) {
+	window := &accessibility.MockWindow{}
+	client := &accessibility.MockAXClient{
+		MockPermissions:          true,
+		MockFrontmostWindow:      window,
+		MockAllWindows:           []ax.Window{window},
+		MockClickableNodes:       filterTestNodes(),
+		MockMissionControlActive: true,
+	}
+
+	adapter := accessibility.NewAdapter(zap.NewNop(), nil, nil, client)
+
+	got, err := adapter.ClickableElements(context.Background(), ports.ElementFilter{
+		DetectMissionControl: false,
+	})
+	if err != nil {
+		t.Fatalf("ClickableElements() with detection off: error = %v, want nil", err)
+	}
+
+	wantAll := []string{idBigButton, idBigLink, idTinyButton, idWideFlatLink}
+	if gotIDs := idsOf(got); !slices.Equal(gotIDs, wantAll) {
+		t.Errorf("detection off returned %v, want %v", gotIDs, wantAll)
+	}
+
+	got, err = adapter.ClickableElements(context.Background(), ports.ElementFilter{
+		DetectMissionControl: true,
+	})
+	if err != nil {
+		t.Fatalf("ClickableElements() with detection on: error = %v, want nil", err)
+	}
+
+	if gotIDs := idsOf(got); len(gotIDs) != 0 {
+		t.Errorf("detection on returned %v, want nothing: Mission Control is up", gotIDs)
+	}
+}
+
 // TestAdapter_ClickableElements_PreservesNodeAttributes checks that the
 // ax.Node -> element.Element conversion carries every attribute across. A
 // dropped bounds or role here would silently misplace every hint.
@@ -230,7 +275,7 @@ func TestAdapter_ClickableElements_PropagatesClientError(t *testing.T) {
 		MockClickableNodesErr: errTestAccessibility,
 	}
 
-	adapter := accessibility.NewAdapter(zap.NewNop(), nil, nil, client, false)
+	adapter := accessibility.NewAdapter(zap.NewNop(), nil, nil, client)
 
 	got, err := adapter.ClickableElements(context.Background(), ports.ElementFilter{})
 	if err == nil {

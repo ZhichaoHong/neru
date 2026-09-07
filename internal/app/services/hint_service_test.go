@@ -98,6 +98,71 @@ func TestHintService_RefreshHints(t *testing.T) {
 	}
 }
 
+// TestHintService_DetectMissionControlFollowsTheConfigInForce pins that the flag
+// the collection decides on is read per activation from the configuration now in
+// force. The accessibility adapter used to hold its own copy, taken at
+// construction, so flipping hints.detect_mission_control and reloading left every
+// later collection acting on the value the daemon booted with, in both
+// directions.
+//
+// The assertion is on what the port was asked for, because that is the whole of
+// what the service contributes: it is the disagreement between the config in
+// force and the collection's answer that was the bug.
+func TestHintService_DetectMissionControlFollowsTheConfigInForce(t *testing.T) {
+	var asked []bool
+
+	mockAcc := &mocks.MockAccessibilityPort{}
+	mockAcc.ClickableElementsFunc = func(
+		_ context.Context,
+		filter ports.ElementFilter,
+	) ([]*element.Element, error) {
+		asked = append(asked, filter.DetectMissionControl)
+
+		return []*element.Element{mustNewElement("btn", image.Rect(0, 0, 20, 20))}, nil
+	}
+
+	generator, _ := hint.NewAlphabetGenerator("asdf", hint.LabelDirectionReverse)
+	service := services.NewHintService(
+		mockAcc,
+		&mocks.MockOverlayPort{},
+		&mocks.MockSystemPort{},
+		generator,
+		config.HintsConfig{DetectMissionControl: false},
+		logger.Get(),
+		nil,
+	)
+
+	generate := func() {
+		t.Helper()
+
+		_, err := service.GenerateHints(
+			context.Background(),
+			nil,
+			nil,
+			"com.example.app",
+			domain.StrategyAXTree,
+			"",
+			"",
+			false,
+		)
+		if err != nil {
+			t.Fatalf("GenerateHints() unexpected error: %v", err)
+		}
+	}
+
+	generate()
+
+	service.UpdateConfig(config.HintsConfig{DetectMissionControl: true})
+	generate()
+
+	service.UpdateConfig(config.HintsConfig{DetectMissionControl: false})
+	generate()
+
+	if want := []bool{false, true, false}; !slices.Equal(asked, want) {
+		t.Errorf("filter.DetectMissionControl per activation = %v, want %v", asked, want)
+	}
+}
+
 func TestHintService_GenerateHintsVisionCombinesSupplementaryAndWindowElements(
 	t *testing.T,
 ) {

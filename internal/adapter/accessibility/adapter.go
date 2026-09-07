@@ -54,11 +54,10 @@ var elementSlicePool = sync.Pool{
 
 // Adapter implements ports.AccessibilityPort by wrapping the ax.Client.
 type Adapter struct {
-	logger               *zap.Logger
-	client               ax.Client
-	excludedBundles      map[string]bool
-	clickableRoles       []string
-	detectMissionControl bool
+	logger          *zap.Logger
+	client          ax.Client
+	excludedBundles map[string]bool
+	clickableRoles  []string
 }
 
 // NewAdapter creates a new accessibility adapter.
@@ -67,7 +66,6 @@ func NewAdapter(
 	excludedBundles []string,
 	clickableRoles []string,
 	client ax.Client,
-	detectMissionControl bool,
 ) *Adapter {
 	excludedMap := make(map[string]bool, len(excludedBundles))
 	for _, bundle := range excludedBundles {
@@ -75,11 +73,10 @@ func NewAdapter(
 	}
 
 	return &Adapter{
-		logger:               logger,
-		client:               client,
-		excludedBundles:      excludedMap,
-		clickableRoles:       clickableRoles,
-		detectMissionControl: detectMissionControl,
+		logger:          logger,
+		client:          client,
+		excludedBundles: excludedMap,
+		clickableRoles:  clickableRoles,
 	}
 }
 
@@ -112,7 +109,8 @@ func (a *Adapter) ClickableElements(
 		zap.Bool("include_notification_center", filter.IncludeNotificationCenter),
 		zap.Bool("include_stage_manager", filter.IncludeStageManager),
 		zap.Bool("include_pip", filter.IncludePIP),
-		zap.Bool("include_screen_capture", filter.IncludeScreenCapture))
+		zap.Bool("include_screen_capture", filter.IncludeScreenCapture),
+		zap.Bool("detect_mission_control", filter.DetectMissionControl))
 
 	adapterStart := time.Now()
 
@@ -120,7 +118,7 @@ func (a *Adapter) ClickableElements(
 	// answer, rather than each deciding separately as the state changes under
 	// them.
 	var missionControlActive bool
-	if a.detectMissionControl {
+	if filter.DetectMissionControl {
 		missionControlActive = a.client.IsMissionControlActive()
 	}
 

@@ -110,7 +110,6 @@ func initializeAdapters(
 			excludedBundles,
 			clickableRoles,
 			axClient,
-			cfg.Hints.DetectMissionControl,
 		)
 	}
 

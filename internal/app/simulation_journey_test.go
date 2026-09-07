@@ -1848,6 +1848,136 @@ text_color = %q
 	})
 }
 
+// TestSimulation_MissionControlDetectionReachesTheHintCollection covers the half
+// of hints.detect_mission_control a collection acts on: with Mission Control up,
+// hinting the frontmost window is hinting whatever the desktop switcher is
+// covering, so a daemon told to detect it collects nothing there.
+//
+// The journey drives the flag in both directions through a reload and asserts on
+// what the user gets - labels or an abandoned activation. That is the
+// disagreement the bug produced: the accessibility adapter took the flag once at
+// construction, so a reload moved the configuration the daemon reports and left
+// every later collection deciding on the value it booted with.
+func TestSimulation_MissionControlDetectionReachesTheHintCollection(t *testing.T) {
+	sim := newSimHarness(t, simConfig(), threeButtons(t))
+
+	// The desktop switcher stays open for the whole journey and the dock item is
+	// all it leaves reachable, so which elements get labeled is the flag and
+	// nothing else.
+	const dockItemID = "dock-finder"
+
+	sim.ax.openMissionControl(simElement(t, dockItemID, image.Rect(0, 900, 60, 960), "Finder"))
+
+	reloadDetecting := func(detect bool) {
+		t.Helper()
+
+		configPath := filepath.Join(t.TempDir(), "config.toml")
+
+		// include_dock_hints travels with detection because the configuration is
+		// invalid otherwise: the dock is the only element source left while
+		// Mission Control is up.
+		writeErr := os.WriteFile(configPath, fmt.Appendf(nil, `
+[hotkeys]
+%q = "hints"
+
+[hints]
+detect_mission_control = %t
+include_dock_hints = true
+`, hintsHotkey, detect), 0o600)
+		if writeErr != nil {
+			t.Fatalf("failed to write the reloaded config: %v", writeErr)
+		}
+
+		reloadErr := sim.app.ReloadConfig(context.Background(), configPath)
+		if reloadErr != nil {
+			t.Fatalf("ReloadConfig() error = %v", reloadErr)
+		}
+	}
+
+	expectHinted := func(when string, wantIDs ...string) {
+		t.Helper()
+
+		drawsBefore := sim.overlay.hintDrawCount()
+
+		sim.pressHotkey(hintsHotkey)
+		sim.waitMode(domain.ModeHints)
+		sim.waitFor("hints drawn "+when, func() bool {
+			return sim.overlay.hintDrawCount() > drawsBefore
+		})
+
+		slices.Sort(wantIDs)
+
+		if got := sim.overlay.lastHintElementIDs(); !slices.Equal(got, wantIDs) {
+			t.Fatalf("hinted %v %s, want %v", got, when, wantIDs)
+		}
+
+		sim.press("Escape")
+		sim.waitMode(domain.ModeIdle)
+	}
+
+	// Detection is off as the daemon booted, so the covered window is walked.
+	expectHinted("with detection off", "save", "cancel", "search")
+
+	reloadDetecting(true)
+	expectHinted("after a reload turned detection on", dockItemID)
+
+	reloadDetecting(false)
+	expectHinted("after a reload turned detection back off", "save", "cancel", "search")
+}
+
+// TestSimulation_MissionControlActionsFollowAReload covers the other half: the
+// arming. Detection is a command reaching the platform, not a value anyone reads
+// back - on macOS it starts the timer and window scans the detection runs on -
+// and while it is disarmed neither Mission Control callback fires. So a reload
+// that turns it on has to arm it, or the hooks the same reload configured never
+// run and the user sees a setting that took no effect until the next restart.
+//
+// The journey asserts on the actions running, not on the setter having been
+// called. Turning it back off empties the hooks at the same time, because the
+// configuration is invalid otherwise; that direction says only that nothing runs.
+func TestSimulation_MissionControlActionsFollowAReload(t *testing.T) {
+	sim := newSimHarness(t, simConfig(), threeButtons(t))
+
+	reloadHooking := func(body string) {
+		t.Helper()
+
+		configPath := filepath.Join(t.TempDir(), "config.toml")
+
+		writeErr := os.WriteFile(configPath, fmt.Appendf(nil, `
+[hotkeys]
+%q = "grid"
+
+[hints]
+%s
+`, gridHotkey, body), 0o600)
+		if writeErr != nil {
+			t.Fatalf("failed to write the reloaded config: %v", writeErr)
+		}
+
+		reloadErr := sim.app.ReloadConfig(context.Background(), configPath)
+		if reloadErr != nil {
+			t.Fatalf("ReloadConfig() error = %v", reloadErr)
+		}
+	}
+
+	// include_dock_hints is required alongside detection: with the switcher up the
+	// dock is the only element source left.
+	reloadHooking(`detect_mission_control = true
+include_dock_hints = true
+on_mission_control_activated = "grid"`)
+
+	sim.watcher.EmitMissionControlActivated()
+	sim.waitMode(domain.ModeGrid)
+
+	sim.press("Escape")
+	sim.waitMode(domain.ModeIdle)
+
+	reloadHooking("detect_mission_control = false")
+
+	sim.watcher.EmitMissionControlActivated()
+	sim.neverMode(domain.ModeGrid, 250*time.Millisecond)
+}
+
 // TestSimulation_HintsNarrowingRedrawsWithoutShowingAgain pins the decision
 // ADR 0003 rests on: entering hints puts the overlay on screen once, and every
 // keystroke that narrows the labels redraws it without paying for the window
