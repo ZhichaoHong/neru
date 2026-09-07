@@ -764,10 +764,10 @@ important thing to know before touching overlay code:
 
 | Aspect                | macOS                                    | Linux X11                              | Linux Wayland                                   | Windows                            |
 | --------------------- | ---------------------------------------- | -------------------------------------- | ------------------------------------------------ | ---------------------------------- |
-| **Window type**       | NSPanel, borderless non-activating       | override-redirect X11 window           | `wlr_layer_shell_v1` overlay surface             | `WS_POPUP` HWND, `WS_EX_NOREDIRECTIONBITMAP` (layered on the GDI fallback) |
+| **Window type**       | NSPanel, borderless non-activating       | override-redirect X11 window           | `wlr_layer_shell_v1` overlay surface             | `WS_POPUP` HWND, always `WS_EX_LAYERED`, plus `WS_EX_NOREDIRECTIONBITMAP` on the DirectComposition path |
 | **Rendering**         | CoreAnimation (CALayer, GPU)             | Cairo on an Xlib surface (CPU)         | Cairo into SHM buffers (CPU)                     | Direct2D on a DirectComposition swapchain (GPU); GDI + software SDF on the fallback (CPU) |
 | **Per-pixel alpha**   | clear color + non-opaque layer           | `CAIRO_OPERATOR_CLEAR`                 | `CAIRO_OPERATOR_CLEAR`                           | premultiplied swapchain; `AC_SRC_ALPHA` via `UpdateLayeredWindowIndirect` on the fallback |
-| **Click-through**     | `setIgnoresMouseEvents:YES`              | XFixes empty input region              | empty `wl_surface` input region                  | `WS_EX_TRANSPARENT` + `HTTRANSPARENT`  |
+| **Click-through**     | `setIgnoresMouseEvents:YES`              | XFixes empty input region              | empty `wl_surface` input region                  | `WS_EX_LAYERED` + `WS_EX_TRANSPARENT` + `HTTRANSPARENT`, see below |
 | **Always on top**     | `NSScreenSaverWindowLevel`               | `_NET_WM_STATE_ABOVE` + `MapRaised`    | overlay layer                                    | `HWND_TOPMOST`                     |
 | **Focus prevention**  | non-activating panel                     | `override_redirect=YES`                | controlled keyboard interactivity                | `WS_EX_NOACTIVATE`                 |
 | **HiDPI**             | dynamic `contentsScale` + backing-change callback | `Xft.dpi`, one global factor  | `wl_output` scale + `wp_fractional_scale_v1` / `wp_viewporter` | per-monitor-v2 DPI aware |
@@ -777,6 +777,24 @@ important thing to know before touching overlay code:
 | **Text**              | NSFontManager                            | Cairo `select_font_face` / `show_text` | Cairo `select_font_face` / `show_text`           | DirectWrite text formats, cached per family and size; cached GDI fonts + `DrawTextW` on the fallback |
 | **Coordinate origin** | bottom-left (Y-flipped in the adapter)   | top-left                               | top-left                                         | top-left                           |
 | **Thread model**      | main-thread dispatch                     | `renderMu` mutex                       | `renderMu` mutex (also guards `wl_display`)      | dedicated UI thread (`LockOSThread`); draws queue and return, the thread presents |
+
+**The Windows overlay has to be layered, or it swallows every mouse event that
+lands on it.** Click and wheel routing resolve their target the way
+`WindowFromPoint` does, which ignores `WM_NCHITTEST`: answering `HTTRANSPARENT`
+only makes Windows keep looking through windows on the *same thread*, and the
+overlay is the only window there. `WS_EX_LAYERED` is the flag that actually takes
+a window out of another process's hit testing. The GDI path needs it anyway,
+since `UpdateLayeredWindowIndirect` is how it presents; the DirectComposition
+path presents through its own swapchain and needs nothing else from the layer, so
+it sets a constant alpha of 255, which leaves the composed content untouched
+(`createHWNDLocked` in `platform/windows/overlay.go`).
+
+Without the flag the overlay is a full-screen dead zone: the wheel and every
+click land on it and go nowhere, and the overlay does not receive them either. A
+`scroll_*` bound in hints or grid does nothing on the vertical axis, and a hints
+`left_click` moves the cursor without pressing anything. Horizontal scroll is
+unaffected, because it goes through the UI Automation `ScrollPattern` route and
+never touches input routing.
 
 ### Animation
 
