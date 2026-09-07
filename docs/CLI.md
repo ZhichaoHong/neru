@@ -752,6 +752,11 @@ neru action move_monitor [--name <name>] [--previous]
 Cycles to the next display by default. An active mode overlay follows the
 cursor to the new display.
 
+In hints mode the move re-scans on the target display, and widens the session to
+`capture_scope = "screen"` to do it, because the focused window stays behind on
+the display you left. `]` and `[` carry it by default there. See
+[Sweeping other monitors](CONFIGURATION.md#sweeping-other-monitors).
+
 | Flag         | Type   | Default | Description                                                            |
 | ------------ | ------ | ------- | ------------------------------------------------------------------------ |
 | `--name`     | string |         | Target a display by name, e.g. `"Built-in Retina Display"`.              |

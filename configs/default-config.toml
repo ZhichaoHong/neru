@@ -134,6 +134,8 @@ visible_check_enabled = false
 "Escape" = "idle"
 "/" = "action search_hints"
 "=" = "action expand_hint_scope"
+"]" = "action move_monitor"
+"[" = "action move_monitor --previous"
 "Backspace" = "action backspace"
 "Tab" = "action cycle_hint"
 "Shift+Tab" = "action cycle_hint --backward"
