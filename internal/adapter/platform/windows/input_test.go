@@ -114,3 +114,47 @@ func TestWheelEvents_NegatesHorizontalDelta(t *testing.T) {
 		})
 	}
 }
+
+// TestCapWheelPixels_KeepsTheDeltaInsideOneEvent is the go_bottom regression.
+// The units a caller's delta converts to reach the target as the signed short
+// in WM_MOUSEWHEEL's high word, so an uncapped scroll_step_full of 1000000
+// pixels arrived as its own low 16 bits: 4000000 units read as 2304, a scroll
+// of 19 notches upward where a whole document was asked for.
+func TestCapWheelPixels_KeepsTheDeltaInsideOneEvent(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		delta int
+		want  int
+	}{
+		{name: "a scroll_step is untouched", delta: 50, want: 50},
+		{
+			name:  "the largest expressible delta is untouched",
+			delta: maxWheelPixels,
+			want:  maxWheelPixels,
+		},
+		{name: "scroll_step_full is capped", delta: 1000000, want: maxWheelPixels},
+		{name: "a capped delta keeps its direction", delta: -1000000, want: -maxWheelPixels},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := capWheelPixels(testCase.delta)
+			if got != testCase.want {
+				t.Fatalf("capWheelPixels(%d) = %d, want %d", testCase.delta, got, testCase.want)
+			}
+
+			units := int32(got) * wheelUnitsPerPixel
+			if int32(int16(units)) != units {
+				t.Fatalf(
+					"%d pixels are %d units, which does not survive a signed short",
+					got,
+					units,
+				)
+			}
+		})
+	}
+}

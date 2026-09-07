@@ -513,6 +513,17 @@ posts `MOUSEEVENTF_HWHEEL` for the horizontal component with the sign flipped,
 because Win32 reads a positive horizontal notch as right where the others read
 it as left.
 
+**A very large delta has a per-platform ceiling.** `go_top` and `go_bottom` ask
+for `scroll_step_full`, a million pixels by default, which no injection
+primitive carries in one go except macOS's. X11 caps the delta at 50 button
+clicks so that one keypress is not tens of thousands of events. Windows caps it
+at 8191 pixels, which is 32767 wheel units: `mouseData` reaches the target as
+the signed short in `WM_MOUSEWHEEL`'s high word, so an uncapped million pixels
+arrived as its own low 16 bits and nudged the document 19 notches. Either way
+`go_bottom` travels as far as one event reaches rather than to the bottom, and
+how far that is remains the application's own per-event ceiling to decide -
+Chromium applies one.
+
 **Modifiers on a scroll** reach the primitive by two routes, because only one
 primitive has a field for them. macOS stamps `CGEventSetFlags` on the scroll
 event, always (the empty set included, since a NULL-source event inherits the
