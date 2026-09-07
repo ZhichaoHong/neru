@@ -215,6 +215,9 @@ func (h *ActionsHandler) dispatchByName(
 	case action.IsSearchHintsAction(actionName):
 		return h.handleSearchHintsAction(), true
 
+	case action.IsExpandHintScopeAction(actionName):
+		return h.handleExpandHintScopeAction(), true
+
 	case action.IsHideCursorAction(actionName) || action.IsShowCursorAction(actionName):
 		return h.handleCursorVisibilityAction(action.IsHideCursorAction(actionName)), true
 

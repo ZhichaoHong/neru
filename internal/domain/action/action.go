@@ -419,6 +419,8 @@ const (
 	NameCycleHint Name = "cycle_hint"
 	// NameSearchHints starts text filtering in hints mode.
 	NameSearchHints Name = "search_hints"
+	// NameExpandHintScope widens a running hints session to the whole screen.
+	NameExpandHintScope Name = "expand_hint_scope"
 
 	// PrefixExec is the prefix for shell command actions.
 	PrefixExec = "exec"
@@ -556,6 +558,11 @@ func IsSearchHintsAction(name string) bool {
 	return Name(name) == NameSearchHints
 }
 
+// IsExpandHintScopeAction reports whether the given action is expand_hint_scope.
+func IsExpandHintScopeAction(name string) bool {
+	return Name(name) == NameExpandHintScope
+}
+
 // IsKnownName determines whether the specified action name is recognized by the
 // application. This is a superset of the names in knownNames — it also includes
 // scroll sub-actions (scroll_up, page_down, etc.) which are IPC/CLI-only.
@@ -584,6 +591,7 @@ func IsKnownName(name Name) bool {
 		NameScrollUp, NameScrollDown, NameScrollLeft, NameScrollRight,
 		NameGoTop, NameGoBottom, NamePageUp, NamePageDown,
 		NameMoveMonitor, NameFeed, NameSleep, NameCycleHint, NameSearchHints,
+		NameExpandHintScope,
 		NameHideCursor, NameShowCursor:
 		return true
 	default:
@@ -613,6 +621,7 @@ func IsScrollSubAction(name string) bool {
 		NameReset, NameBackspace, NameMoveCell,
 		NameWaitForModeExit, NameSaveCursorPos, NameRestoreCursorPos,
 		NameMoveMonitor, NameFeed, NameSleep, NameCycleHint, NameSearchHints,
+		NameExpandHintScope,
 		NameHideCursor, NameShowCursor:
 		return false
 	default:
@@ -722,6 +731,7 @@ func (n Name) ToType() (Type, error) {
 		NameSleep,
 		NameCycleHint,
 		NameSearchHints,
+		NameExpandHintScope,
 		NameHideCursor,
 		NameShowCursor:
 		return 0, derrors.Newf(derrors.CodeInvalidInput, "action name not executable: %s", n)

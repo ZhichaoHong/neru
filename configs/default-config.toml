@@ -133,6 +133,7 @@ visible_check_enabled = false
 [hints.hotkeys]
 "Escape" = "idle"
 "/" = "action search_hints"
+"=" = "action expand_hint_scope"
 "Backspace" = "action backspace"
 "Tab" = "action cycle_hint"
 "Shift+Tab" = "action cycle_hint --backward"

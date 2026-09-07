@@ -2,6 +2,7 @@ package modes
 
 import (
 	"context"
+	"time"
 
 	"go.uber.org/zap"
 
@@ -65,6 +66,103 @@ func (h *Handler) StartHintSearch() error {
 	defer h.mu.Unlock()
 
 	return h.startHintSearch()
+}
+
+// ExpandHintScope widens the running hints session to the whole active screen
+// and re-scans, so the controls in the windows behind the focused one are hinted
+// too. It reports whether the session actually widened; a session already
+// reading the screen says no and is left alone rather than re-scanning for the
+// same answer, and one running a strategy the scope does not bound is refused.
+func (h *Handler) ExpandHintScope() (bool, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	return h.expandHintScope()
+}
+
+// expandHintScope is the locked body of ExpandHintScope.
+//
+// One way and sticky: there is no narrowing counterpart, and the override lives
+// on the context until the session ends, so every later refresh in this session
+// - a space change, a monitor move, a passthrough - keeps the wider scope. The
+// next activation starts from capture_scope again because applyHintFlagsFresh
+// writes the override back to what the activation asked for.
+//
+// The re-scan goes through the ordinary in-place refresh rather than the
+// screen-change path, because that is the one that takes the labels off screen
+// before a screen-reading strategy captures it. Expanding is only worth doing
+// under such a strategy, so capturing our own labels would be the common case
+// rather than the corner one.
+func (h *handlerState) expandHintScope() (bool, error) {
+	if h.appState.CurrentMode() != domain.ModeHints {
+		return false, derrors.New(
+			derrors.CodeInvalidInput,
+			"expand_hint_scope requires hints mode",
+		)
+	}
+
+	if h.hints == nil || h.hints.Context == nil {
+		return false, derrors.New(derrors.CodeActionFailed, "hints component not available")
+	}
+
+	strategy, captureScope := h.sessionCaptureSettings()
+
+	// Only the screen-capture strategies are bounded by the scope, so under
+	// axtree the expansion would set the override, pay for a re-scan, and hint
+	// exactly the same window. Say so rather than doing that: the user pressed a
+	// key expecting more hints, and silence would read as the key being broken.
+	if strategy != domain.StrategyVision && strategy != domain.StrategyContour {
+		return false, derrors.Newf(
+			derrors.CodeInvalidInput,
+			"expand_hint_scope has no effect under the %q strategy", strategy,
+		)
+	}
+
+	if captureScope == domain.CaptureScopeScreen {
+		h.logger.Debug("Hints already read the whole screen; not expanding")
+
+		return false, nil
+	}
+
+	h.hints.Context.SetCaptureScopeOverride(domain.CaptureScopeScreen)
+
+	// A bare activation: the refresh path writes only the fields an activation
+	// carries, so every filter and override the session was started with - and
+	// the scope just set - comes from the context untouched.
+	h.activateHintModeInternal(modecmd.Activation{Mode: domain.ModeHints})
+
+	return true, nil
+}
+
+// sessionCaptureSettings is the strategy the running session scans with and the
+// region it scans, resolved the way the activation resolves them: the session
+// override where there is one, otherwise the per-app configuration. Both come
+// from one bundle-ID read, fetched with the short timeout the activation uses;
+// failing to read it falls back to the global settings, which are the answer for
+// every app that carries no override of its own.
+func (h *handlerState) sessionCaptureSettings() (string, string) {
+	bundleCtx, bundleCancel := context.WithTimeout(h.ctx, 1*time.Second)
+	defer bundleCancel()
+
+	bundleID, err := h.actionService.FocusedAppBundleID(bundleCtx)
+	if err != nil {
+		h.logger.Debug("Failed to get focused app bundle ID for capture settings",
+			zap.Error(err))
+
+		bundleID = ""
+	}
+
+	strategy := h.config.Hints.StrategyForApp(bundleID)
+	if override := h.hints.Context.StrategyOverride(); override != "" {
+		strategy = override
+	}
+
+	captureScope := h.config.Hints.CaptureScopeForApp(bundleID)
+	if override := h.hints.Context.CaptureScopeOverride(); override != "" {
+		captureScope = override
+	}
+
+	return strategy, captureScope
 }
 
 // CycleHint cycles through visible hints in hints mode, selecting the next or previous one.
