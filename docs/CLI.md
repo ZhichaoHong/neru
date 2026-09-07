@@ -322,8 +322,11 @@ nothing.
   any of them.
 - `--label-direction` is explained under
   [Choosing a label direction](CONFIGURATION.md#choosing-a-label-direction).
-- `--strategy vision` and `--split-word` work everywhere. On Linux and Windows
-  the strategy is text-only, and Windows needs an OCR language pack. See
+- `--strategy vision` and `--split-word` work everywhere. On Linux (tesseract)
+  and on Windows (`Windows.Media.Ocr`) the strategy is text-only: an OCR engine
+  answers the text question and nothing answers the rectangle one, so it finds
+  labelled controls and misses unlabelled ones. Windows needs an OCR language
+  pack. See
   [Accessibility and hints](CROSS_PLATFORM.md#accessibility-and-hints).
 
 **Where the defaults come from**
