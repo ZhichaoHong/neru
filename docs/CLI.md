@@ -323,9 +323,10 @@ nothing.
   any of them.
 - `--label-direction` is explained under
   [Choosing a label direction](CONFIGURATION.md#choosing-a-label-direction).
-- `--strategy vision` and `--split-word` work on macOS and Linux, and do
-  nothing on Windows, which has no element-detection engine. On Linux the
-  strategy is text-only. See
+- `--strategy vision` and `--split-word` work on every platform. On Linux
+  (tesseract) and on Windows (`Windows.Media.Ocr`) the strategy is text-only: an
+  OCR engine answers the text question and nothing answers the rectangle one, so
+  it finds labelled controls and misses unlabelled ones. See
   [Accessibility and hints](CROSS_PLATFORM.md#accessibility-and-hints).
 
 **Where the defaults come from**
