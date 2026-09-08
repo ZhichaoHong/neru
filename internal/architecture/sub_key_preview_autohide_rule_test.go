@@ -185,7 +185,7 @@ func TestSubKeyPreviewAutohideRulePinReportsARuleItCannotRead(t *testing.T) {
 		source string
 	}{
 		{
-			name:   "the method renamed",
+			name:   nativeRuleRenamedCase,
 			source: "- (void)drawSubGridPreviewInCellRect:(NSRect)cellRect {\n\treturn;\n}\n",
 		},
 		{
@@ -286,10 +286,10 @@ var subKeyPreviewNativeOperands = map[string]func(subKeyPreviewInputs) float64{
 	"subFont.pointSize": func(inputs subKeyPreviewInputs) float64 {
 		return float64(inputs.style().SubKeyPreviewFontSize())
 	},
-	"cellRect.size.width": func(inputs subKeyPreviewInputs) float64 {
+	nativeRuleCellWidth: func(inputs subKeyPreviewInputs) float64 {
 		return float64(inputs.cell.Dx())
 	},
-	"cellRect.size.height": func(inputs subKeyPreviewInputs) float64 {
+	nativeRuleCellHeight: func(inputs subKeyPreviewInputs) float64 {
 		return float64(inputs.cell.Dy())
 	},
 	"cols": func(inputs subKeyPreviewInputs) float64 { return float64(inputs.subCols) },

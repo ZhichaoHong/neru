@@ -110,6 +110,18 @@ static const CGFloat kDefaultHintFontSize = 10.0;
 /// Default font size for grid overlays (regular system font).
 static const CGFloat kDefaultGridFontSize = 10.0;
 
+/// Estimated glyph width as a fraction of font size, and line height as a
+/// multiple of it. These are the two multipliers badge.EstimateTextWidth and
+/// badge.EstimateTextHeight use, and the recursive-grid label fit is measured
+/// with them on every platform; the pin is
+/// internal/architecture/label_fit_rule_test.go, which reads these values out of
+/// this file rather than assuming them.
+static const CGFloat kGridLabelWidthMultiplier = 0.7;
+static const CGFloat kGridLabelHeightMultiplier = 1.4;
+/// Size the label fit will not shrink past. Matches minLabelFontSize in
+/// internal/adapter/overlay/render/recursivegrid/style.go.
+static const CGFloat kGridLabelMinFontSize = 6.0;
+
 /// Height of the downward-pointing arrow on hint tooltips (0 when arrow is hidden).
 static const CGFloat kHintArrowHeight = 1.0;
 /// Width multiplier for the arrow base relative to its height.
@@ -179,6 +191,7 @@ typedef NS_ENUM(NSInteger, HintPlacement) {
 @property(nonatomic, assign) CGFloat gridLabelBackgroundBorderWidth;   ///< Grid label badge border width
 @property(nonatomic, assign) BOOL hideUnmatched;                       ///< Hide unmatched cells
 @property(nonatomic, assign) CGFloat gridLabelAutohideMultiplier;      ///< Main label autohide multiplier (0 = disable)
+@property(nonatomic, assign) BOOL gridLabelFitToCell;                  ///< Shrink the main label to fit its cell
 
 // Sub-key preview: draws a miniature key grid inside each cell
 @property(nonatomic, assign) BOOL gridDrawSubKeyPreview;          ///< Draw sub-key preview mini-grid
@@ -242,6 +255,7 @@ typedef NS_ENUM(NSInteger, HintPlacement) {
 - (NSRect)boundingRectForHint:(HintItem *)hint;            ///< Compute bounding rect for hint
 - (NSRect)boundingRectForSearchInput;                      ///< Compute search input rect
 - (NSRect)screenRectForGridCell:(GridCellItem *)cellItem;  ///< Compute screen-space rect for grid cell
+- (CGFloat)fittedGridLabelFontSizeFor:(NSString *)label inCellRect:(NSRect)cellRect;  ///< Fit a label to a cell
 - (void)drawGridLabel:(NSString *)label
              inCellRect:(NSRect)cellRect
               isMatched:(BOOL)isMatched
@@ -346,6 +360,7 @@ typedef NS_ENUM(NSInteger, HintPlacement) {
 		_gridLabelBackgroundBorderWidth = 1.0;
 		_gridSubKeyAutohideMultiplier = 1.5;
 		_gridLabelAutohideMultiplier = 0.0;
+		_gridLabelFitToCell = NO;
 		_hideUnmatched = NO;
 		_cursorIndicatorVisible = NO;
 		_cursorIndicatorRadius = 3.0;
@@ -1547,6 +1562,43 @@ typedef NS_ENUM(NSInteger, HintPlacement) {
 	[borderPath stroke];
 }
 
+/// Largest size at or below the configured grid font size whose estimated text
+/// box fits the cell, floored at kGridLabelMinFontSize.
+///
+/// This is the same rule as recursivegrid.Style.LabelFontSizeIn, which the Linux
+/// and Windows recursive-grid overlays call; the pin is
+/// internal/architecture/label_fit_rule_test.go, and it reads this method by its
+/// shape, so a rewrite fails it even when the behaviour holds.
+///
+/// No monitor-scale term, unlike the Go callers: AppKit measures the cell and
+/// draws the glyph in the same points, so there is nothing to convert.
+/// @param label Grid label
+/// @param cellRect Cell rectangle in view coordinates
+- (CGFloat)fittedGridLabelFontSizeFor:(NSString *)label inCellRect:(NSRect)cellRect {
+	// UTF-16 units, not composed characters. Identical for every label a grid
+	// cell can carry, which is one ASCII key. A hypothetical multi-unit label
+	// would be measured as more glyphs than it draws and so come out smaller than
+	// it needs to be, never clipped.
+	CGFloat glyphs = (CGFloat)[label length];
+	if (glyphs <= 0.0) {
+		return self.gridFont.pointSize;
+	}
+
+	CGFloat fitted = self.gridFont.pointSize;
+
+	CGFloat widthLimit = cellRect.size.width / (glyphs * kGridLabelWidthMultiplier);
+	if (widthLimit < fitted) {
+		fitted = widthLimit;
+	}
+
+	CGFloat heightLimit = cellRect.size.height / kGridLabelHeightMultiplier;
+	if (heightLimit < fitted) {
+		fitted = heightLimit;
+	}
+
+	return MAX(fitted, kGridLabelMinFontSize);
+}
+
 /// Draw a grid label centered in the cell, optionally with a rounded badge.
 /// @param label Grid label
 /// @param cellRect Cell rectangle in view coordinates
@@ -1573,23 +1625,41 @@ typedef NS_ENUM(NSInteger, HintPlacement) {
 	}
 
 	// Skip main label when cells are too small to render legibly.
-	// Each cell must be at least (multiplier × font size) in both dimensions.
+	// Each cell must be at least (multiplier × the fit floor) in both dimensions.
 	// A multiplier of 0 disables autohide.
+	// The floor rather than the configured size because a recursive-grid label is
+	// shrunk to its cell and stops there, so the floor is the smallest label that
+	// will ever be drawn and the only size worth asking a cell to hold.
 	// This is the same rule as recursivegrid.Style.ShowLabelIn, which the Linux
 	// and Windows recursive-grid overlays call; the pin is
 	// internal/architecture/label_autohide_rule_test.go, and it reads this
 	// guard by its shape, so a rewrite fails it even when the behaviour holds.
 	if (self.gridLabelAutohideMultiplier > 0) {
-		CGFloat minCell = self.gridFont.pointSize * self.gridLabelAutohideMultiplier;
+		CGFloat minCell = kGridLabelMinFontSize * self.gridLabelAutohideMultiplier;
 		if (cellRect.size.width < minCell || cellRect.size.height < minCell)
 			return;
+	}
+
+	// Recursive grid asks for its labels to be fit to the cell; grid mode draws
+	// at the configured size, as it does on Linux and Windows.
+	NSFont *labelFont = self.gridFont;
+	if (self.gridLabelFitToCell) {
+		CGFloat fitted = [self fittedGridLabelFontSizeFor:label inCellRect:cellRect];
+		if (fitted < labelFont.pointSize) {
+			// From the descriptor, not the family name: the configured family was
+			// already resolved once when gridFont was built, and re-resolving it by
+			// name puts a font lookup on the draw path for the same answer.
+			NSFont *shrunk = [NSFont fontWithDescriptor:labelFont.fontDescriptor size:fitted];
+			if (shrunk)
+				labelFont = shrunk;
+		}
 	}
 
 	// Set up attributed string
 	NSMutableAttributedString *attrString = self.cachedGridCellAttributedString;
 	[[attrString mutableString] setString:label];
 	NSRange fullRange = NSMakeRange(0, [label length]);
-	[attrString setAttributes:@{NSFontAttributeName : self.gridFont} range:fullRange];
+	[attrString setAttributes:@{NSFontAttributeName : labelFont} range:fullRange];
 	[attrString addAttribute:NSForegroundColorAttributeName
 	                   value:[self color:self.cachedGridTextColor withMultipliedAlpha:alpha]
 	                   range:fullRange];
@@ -1610,11 +1680,13 @@ typedef NS_ENUM(NSInteger, HintPlacement) {
 	}
 
 	// Compute badge dimensions
+	// Auto padding reads the font the glyph is actually drawn with, so a label
+	// shrunk to its cell does not sit in a plate sized for the configured font.
 	CGFloat horizontalPadding = self.gridLabelBackgroundPaddingX >= 0.0
 	                                ? self.gridLabelBackgroundPaddingX
-	                                : MAX(4.0, round(self.gridFont.pointSize * 0.4));
+	                                : MAX(4.0, round(labelFont.pointSize * 0.4));
 	CGFloat verticalPadding = self.gridLabelBackgroundPaddingY >= 0.0 ? self.gridLabelBackgroundPaddingY
-	                                                                  : MAX(2.0, round(self.gridFont.pointSize * 0.2));
+	                                                                  : MAX(2.0, round(labelFont.pointSize * 0.2));
 	CGFloat badgeWidth = MAX(textSize.width + (horizontalPadding * 2.0), textSize.height + (verticalPadding * 2.0));
 	CGFloat badgeHeight = textSize.height + (verticalPadding * 2.0);
 
@@ -2841,6 +2913,7 @@ void NeruDrawGridCells(OverlayWindow window, GridCell *cells, int count, GridCel
 	CGFloat labelBackgroundBorderRadius = style.labelBackgroundBorderRadius;
 	CGFloat labelBackgroundBorderWidth = style.labelBackgroundBorderWidth;
 	CGFloat labelAutohideMultiplier = style.labelAutohideMultiplier;
+	BOOL labelFitToCell = style.labelFitToCell ? YES : NO;
 	BOOL drawSubKeyPreview = style.drawSubKeyPreview ? YES : NO;
 	int subKeyGridCols = style.subKeyGridCols;
 	int subKeyGridRows = style.subKeyGridRows;
@@ -2913,6 +2986,7 @@ void NeruDrawGridCells(OverlayWindow window, GridCell *cells, int count, GridCel
 			controller.overlayView.gridLabelBackgroundBorderRadius = labelBackgroundBorderRadius;
 			controller.overlayView.gridLabelBackgroundBorderWidth = labelBackgroundBorderWidth;
 			controller.overlayView.gridLabelAutohideMultiplier = labelAutohideMultiplier;
+			controller.overlayView.gridLabelFitToCell = labelFitToCell;
 
 			// Apply sub-key preview settings
 			controller.overlayView.gridDrawSubKeyPreview = drawSubKeyPreview;
@@ -2990,6 +3064,7 @@ void NeruAnimateRecursiveGridTransition(
 	CGFloat labelBackgroundBorderRadius = style.labelBackgroundBorderRadius;
 	CGFloat labelBackgroundBorderWidth = style.labelBackgroundBorderWidth;
 	CGFloat labelAutohideMultiplier = style.labelAutohideMultiplier;
+	BOOL labelFitToCell = style.labelFitToCell ? YES : NO;
 	BOOL drawSubKeyPreview = style.drawSubKeyPreview ? YES : NO;
 	int subKeyGridCols = style.subKeyGridCols;
 	int subKeyGridRows = style.subKeyGridRows;
@@ -3057,6 +3132,7 @@ void NeruAnimateRecursiveGridTransition(
 			controller.overlayView.gridLabelBackgroundBorderRadius = labelBackgroundBorderRadius;
 			controller.overlayView.gridLabelBackgroundBorderWidth = labelBackgroundBorderWidth;
 			controller.overlayView.gridLabelAutohideMultiplier = labelAutohideMultiplier;
+			controller.overlayView.gridLabelFitToCell = labelFitToCell;
 			controller.overlayView.gridDrawSubKeyPreview = drawSubKeyPreview;
 			controller.overlayView.gridSubKeyCols = subKeyGridCols;
 			controller.overlayView.gridSubKeyRows = subKeyGridRows;

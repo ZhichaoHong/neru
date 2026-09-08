@@ -1218,14 +1218,15 @@ func (o *sharedOverlay) drawFrame(
 				label = string(keyRunes[idx])
 			}
 
-			if style.ShowLabelIn(cell) {
+			if style.ShowLabelIn(cell, o.srf.surfaceScale()) {
 				if style.LabelBackground() {
 					o.drawLabelBackground(label, cell, style)
 				}
 
 				o.drawTextCentered(
 					label, cell, style.FontFamily(),
-					style.LabelFontSize(), style.TextColorARGB(),
+					style.LabelFontSizeIn(label, cell, o.srf.surfaceScale()),
+					style.TextColorARGB(),
 				)
 			}
 
@@ -1429,8 +1430,11 @@ func (o *sharedOverlay) drawLabelBackground(
 	label string, cell image.Rectangle,
 	style recursivegridcomponent.Style,
 ) {
-	// Match the scaled font that drawTextCentered renders for the label.
-	fontSize := style.LabelFontSize() * o.srf.surfaceScale()
+	// Match the scaled font that drawTextCentered renders for the label, fit
+	// included: a plate sized for the configured font around a glyph shrunk to
+	// the cell is a plate the glyph rattles around in.
+	scale := o.srf.surfaceScale()
+	fontSize := style.LabelFontSizeIn(label, cell, scale) * scale
 	paddingX := badge.AutoPadding(fontSize,
 		style.LabelBackgroundPaddingX(), true)
 	paddingY := badge.AutoPadding(fontSize,

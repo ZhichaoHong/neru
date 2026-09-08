@@ -328,7 +328,7 @@ func (o *winOverlay) paintRecursiveGrid(
 				label = string(keyRunes[idx])
 			}
 
-			if style.ShowLabelIn(cell) {
+			if style.ShowLabelIn(cell, 1) {
 				if style.LabelBackground() {
 					o.drawRecursiveLabelBackground(label, cell, style)
 				}
@@ -337,7 +337,7 @@ func (o *winOverlay) paintRecursiveGrid(
 					label,
 					cell,
 					style.FontFamily(),
-					style.LabelFontSize(),
+					style.LabelFontSizeIn(label, cell, 1),
 					style.TextColorARGB(),
 				)
 			}
@@ -400,7 +400,10 @@ func (o *winOverlay) drawRecursiveLabelBackground(
 	cell image.Rectangle,
 	style recursivegridcomponent.Style,
 ) {
-	fontSize := style.LabelFontSize()
+	// Fitted, for the same reason the label itself is: a plate sized for the
+	// configured font around a glyph shrunk to the cell is a plate the glyph
+	// rattles around in.
+	fontSize := style.LabelFontSizeIn(label, cell, 1)
 	paddingX := badge.AutoPadding(fontSize, style.LabelBackgroundPaddingX(), true)
 	paddingY := badge.AutoPadding(fontSize, style.LabelBackgroundPaddingY(), false)
 	width := badge.EstimateTextWidth(label, fontSize) + paddingX*winPaddingMultiplier
