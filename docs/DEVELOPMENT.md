@@ -73,6 +73,12 @@ For end-user installation (Homebrew, Nix, prebuilt binaries) see
   first build, including under Devbox.
 - **Just** — command runner — [install](https://github.com/casey/just)
 - **golangci-lint** — linter — [install](https://golangci-lint.run/usage/install/)
+- **A POSIX shell** (Windows) - run `just` from Git Bash, not PowerShell or
+  `cmd`. `just` runs every recipe and every backtick under `sh`, which Windows
+  does not supply, so from PowerShell the first backtick fails with `just could
+  not find the shell: program not found` and no recipe runs. `just --list` still
+  works, which makes this look like a broken justfile rather than a missing
+  shell. CI does the same thing: every Windows `just` step pins `shell: bash`.
 
 ### Option A: Devbox (recommended)
 
