@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/y3owk1n/neru/internal/adapter/ipc"
 	"github.com/y3owk1n/neru/internal/cli"
 )
 
@@ -212,6 +213,12 @@ func TestCommandInitialization(t *testing.T) {
 }
 
 func TestCommandExecutionWithoutDaemon(t *testing.T) {
+	// Neru's IPC endpoint is machine-global, so a daemon the developer left
+	// running answers these commands and inverts every expectation below.
+	if ipc.IsServerRunning() {
+		t.Skip("a Neru daemon is answering IPC; this test asserts the no-daemon behavior")
+	}
+
 	// Test that all CLI commands execute without panicking when no daemon is running
 	// Commands that require IPC should return errors, while utility commands should work
 	tests := []struct {
