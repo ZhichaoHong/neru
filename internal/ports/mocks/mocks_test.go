@@ -35,11 +35,6 @@ func TestMockAccessibilityPort_Defaults(t *testing.T) {
 		)
 	}
 
-	excluded := mock.IsAppExcluded(context.Background(), "test.app")
-	if excluded {
-		t.Error("IsAppExcluded() default should return false")
-	}
-
 	err = mock.Health(context.Background())
 	if err != nil {
 		t.Errorf("Health() default should return nil, got %v", err)

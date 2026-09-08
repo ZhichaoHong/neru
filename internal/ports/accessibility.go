@@ -64,12 +64,13 @@ type AccessibilityPort interface {
 	// currently focused application. On macOS this is a bundle ID
 	// (e.g. "com.apple.Safari"). On Linux this will be a desktop ID or
 	// executable name; on Windows an AppUserModelID or executable path.
+	//
+	// Whether that application is excluded is deliberately not asked here:
+	// general.excluded_apps is configuration, answered by
+	// config.Config.IsAppExcluded against whatever a reload last installed. A
+	// second copy behind this port is a copy someone has to remember to
+	// refresh, and that copy was stale for the whole life of the daemon.
 	FocusedAppBundleID(ctx context.Context) (string, error)
-
-	// IsAppExcluded checks if the given application identifier is in the
-	// configured exclusion list. The identifier format is platform-dependent
-	// (see FocusedAppBundleID).
-	IsAppExcluded(ctx context.Context, bundleID string) bool
 
 	// PrimeApplication reports whether bundleID has an accessibility tree to
 	// hint against, waiting briefly for one. Exists for macOS, where Electron,

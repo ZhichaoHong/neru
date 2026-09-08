@@ -426,15 +426,23 @@ before anything else, required by Cocoa. Non-macOS builds omit it. Never add
 The codebase says "bundle ID" generically for the platform application
 identifier:
 
-| Platform | Term                        | Example                          |
-| -------- | --------------------------- | -------------------------------- |
-| macOS    | Bundle ID                   | `com.apple.Safari`               |
-| Linux    | Desktop ID / executable     | `firefox.desktop` or `firefox`   |
-| Windows  | AppUserModelID / executable | `Microsoft.Edge` or `msedge.exe` |
+| Platform | Term                  | Example                                       |
+| -------- | --------------------- | --------------------------------------------- |
+| macOS    | Bundle ID             | `com.apple.Safari`                            |
+| Linux    | `WM_CLASS` / `app_id` | `firefox` or `Google-chrome`                  |
+| Windows  | Full executable path  | `C:\Program Files\...\Application\chrome.exe` |
 
 `ports.AccessibilityPort.FocusedAppBundleID` returns whatever the platform uses,
-and `general.excluded_apps` in the config should use the same format for the
-target platform.
+and `general.excluded_apps` plus every `bundle_id` in the config are matched
+against it.
+
+Windows is the awkward one: the identifier is a full path, which is not stable
+across install locations or app updates. So `config.bundleIDMatches` compares a
+configured value holding no path separator against the *basename* of the runtime
+identifier, which lets a user write `chrome.exe`. The rule needs no platform
+branch - macOS bundle IDs and Linux `WM_CLASS`/`app_id` never contain a
+separator, so they cannot reach that branch. See
+[CONFIGURATION.md](./CONFIGURATION.md#app-identity-across-platforms-bundle_id).
 
 ---
 

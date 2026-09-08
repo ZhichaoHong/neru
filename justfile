@@ -277,6 +277,7 @@ test-foundation:
         ./internal/app/services/virtualpointer \
         ./internal/architecture ./internal/cli/cliutil \
         ./internal/domain ./internal/domain/action \
+        ./internal/domain/appidentity \
         ./internal/domain/element ./internal/domain/grid \
         ./internal/domain/hint ./internal/domain/keyvocab \
         ./internal/domain/modecmd ./internal/domain/motion \
