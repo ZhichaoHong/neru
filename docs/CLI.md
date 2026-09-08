@@ -591,7 +591,7 @@ a hotkey binding string, or `neru action` directly.
 | Toggle   | `left_mouse_toggle`, `right_mouse_toggle`, `middle_mouse_toggle`                                    |
 | Movement | `move_mouse`, `move_mouse_relative`, `move_monitor`                                                 |
 | Scroll   | `scroll`, `scroll_up`, `scroll_down`, `scroll_left`, `scroll_right`, `page_up`, `page_down`, `go_top`, `go_bottom` |
-| Mode     | `reset`, `backspace`, `move_cell`, `cycle_hint`, `wait_for_mode_exit`                               |
+| Mode     | `reset`, `backspace`, `move_cell`, `cycle_hint`, `expand_hint_scope`, `wait_for_mode_exit`           |
 | Cursor   | `save_cursor_pos`, `restore_cursor_pos`, `hide_cursor`, `show_cursor`                               |
 | Keys     | `feed`                                                                                              |
 | Timing   | `sleep` — [hotkey bindings only](#action-sleep-hotkey-bindings-only)                                |
@@ -754,6 +754,11 @@ neru action move_monitor [--name <name>] [--previous]
 
 Cycles to the next display by default. An active mode overlay follows the
 cursor to the new display.
+
+In hints mode the move re-scans on the target display, and widens the session to
+`capture_scope = "screen"` to do it, because the focused window stays behind on
+the display you left. `]` and `[` carry it by default there. See
+[Sweeping other monitors](CONFIGURATION.md#sweeping-other-monitors).
 
 | Flag         | Type   | Default | Description                                                            |
 | ------------ | ------ | ------- | ------------------------------------------------------------------------ |
@@ -942,6 +947,26 @@ Valid in hints mode only.
 | Flag         | Type | Default | Description                                    |
 | ------------ | ---- | ------- | ---------------------------------------------- |
 | `--backward` | bool | `false` | Cycle to the previous hint instead of the next. |
+
+---
+
+## neru action expand_hint_scope
+
+Widen the running hints session to the whole active screen and re-scan, so the
+controls in the windows behind the focused one get hints too.
+
+```
+neru action expand_hint_scope
+```
+
+Valid in hints mode only, and only under the `vision` and `contour` strategies -
+`axtree` walks the focused window whatever the capture scope says, so the call is
+refused there rather than paying for a re-scan of the same window.
+
+The widening is one way and sticky: it holds through a monitor move and a space
+change for the rest of the session, and the next activation starts from
+[`hints.capture_scope`](CONFIGURATION.md#hints) again. Calling it on a session
+that already reads the screen succeeds and changes nothing.
 
 ---
 

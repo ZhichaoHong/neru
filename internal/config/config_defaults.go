@@ -417,6 +417,9 @@ func defaultHints() HintsConfig {
 		Hotkeys: map[string]StringOrStringArray{
 			KeyDisplayEscape:    {CmdIdle},
 			"/":                 {"action search_hints"},
+			"=":                 {"action expand_hint_scope"},
+			"]":                 {"action move_monitor"},
+			"[":                 {"action move_monitor --previous"},
 			KeyDisplayBackspace: {CmdBackspace},
 			"Tab":               {"action cycle_hint"},
 			"Shift+Tab":         {"action cycle_hint --backward"},
