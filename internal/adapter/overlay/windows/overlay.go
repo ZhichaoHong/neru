@@ -59,6 +59,7 @@ type overlayWindow interface {
 	)
 	DrawPointerGlyph(center image.Point, size int, char string, fontFamily string, color uint32)
 	Flush() error
+	SetExcludedFromCapture(exclude bool) error
 }
 
 type winOverlay struct {
@@ -110,6 +111,12 @@ type winOverlay struct {
 	lastPointer      recursivegridcomponent.VirtualPointerState
 	transitionCancel context.CancelFunc
 	transitionDone   chan struct{}
+
+	// excludeFromCapture is the screen-share affinity to give the HWND. It lives
+	// here as well as on the platform window because recreateWindow builds a new
+	// platform window rather than reviving the old one, so the platform field
+	// cannot survive that path on its own.
+	excludeFromCapture bool
 }
 
 func newWinOverlay(logger *zap.Logger, renderMu *sync.Mutex) *winOverlay {
@@ -378,6 +385,22 @@ func (o *winOverlay) DrawGrid(gridValue *domainGrid.Grid, input string, style gr
 	o.redrawGrid()
 }
 
+// SetExcludedFromCapture applies the screen-share affinity to the surface's
+// window and remembers it for the recreation paths.
+func (o *winOverlay) SetExcludedFromCapture(exclude bool) error {
+	if o == nil {
+		return nil
+	}
+
+	o.excludeFromCapture = exclude
+
+	if o.window == nil {
+		return nil
+	}
+
+	return o.window.SetExcludedFromCapture(exclude)
+}
+
 // scale is physical pixels per logical unit of the monitor this overlay covers.
 //
 // Windows hands out unvirtualized physical pixels, so a font size or a border
@@ -416,6 +439,14 @@ func (o *winOverlay) recreateWindow() {
 	}
 
 	o.window = window
+
+	if o.excludeFromCapture {
+		affinityErr := window.SetExcludedFromCapture(true)
+		if affinityErr != nil && o.logger != nil {
+			o.logger.Warn("recreated overlay could not be excluded from screen capture",
+				zap.Error(affinityErr))
+		}
+	}
 
 	if o.logger != nil {
 		bounds := window.Bounds()

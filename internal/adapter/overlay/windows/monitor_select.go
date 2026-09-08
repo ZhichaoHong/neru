@@ -246,7 +246,7 @@ func (m *Manager) monitorWindowLocked(
 		return win, win.ResizeTo(bounds.Min.X, bounds.Min.Y, bounds.Dx(), bounds.Dy())
 	}
 
-	win, err := winplatform.NewOverlayWindowAt(bounds.Min.X, bounds.Min.Y, bounds.Dx(), bounds.Dy())
+	win, err := m.newOverlayWindowAt(bounds.Min.X, bounds.Min.Y, bounds.Dx(), bounds.Dy())
 	if err != nil {
 		return nil, err
 	}

@@ -78,6 +78,9 @@
 //   - native_rule_test.go — the comparison vocabulary the rule-shaped
 //     language-boundary pins share, so no two of them read an operator
 //     differently, plus the reader that finds a native definition's body.
+//   - overlay_capture_affinity_test.go — every Windows overlay window is created
+//     through a choke point that applies the screen-share display affinity, so no
+//     new creation site can put a capturable overlay on screen.
 //   - overlay_frame_test.go — an overlay Frame carries domain values only.
 //   - platform_slots_test.go — platform files use the documented file slots,
 //     tagged packages tag every file, package comments reach every target.
