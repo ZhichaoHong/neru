@@ -86,35 +86,22 @@ func TestWlrootsScrollNotch_StepAndDiscreteAgree(t *testing.T) {
 
 	tests := []struct {
 		name     string
-		axis     int
 		delta    int
 		wantStep int
 		wantDisc int
 	}{
-		{
-			name: "vertical scroll down", axis: uinputScrollAxisVertical,
-			delta: -50, wantStep: step, wantDisc: 1,
-		},
-		{
-			name: "vertical scroll up", axis: uinputScrollAxisVertical,
-			delta: 50, wantStep: -step, wantDisc: -1,
-		},
-		{
-			name: "horizontal scroll right", axis: uinputScrollAxisHorizontal,
-			delta: 50, wantStep: step, wantDisc: 1,
-		},
-		{
-			name: "horizontal scroll left", axis: uinputScrollAxisHorizontal,
-			delta: -50, wantStep: -step, wantDisc: -1,
-		},
+		{name: "vertical, caller scrolls down", delta: -50, wantStep: step, wantDisc: 1},
+		{name: "vertical, caller scrolls up", delta: 50, wantStep: -step, wantDisc: -1},
+		{name: "horizontal, caller scrolls left", delta: 50, wantStep: -step, wantDisc: -1},
+		{name: "horizontal, caller scrolls right", delta: -50, wantStep: step, wantDisc: 1},
 	}
 
 	for _, testCase := range tests {
 		t.Run(testCase.name, func(t *testing.T) {
-			gotStep, gotDisc := wlrootsScrollNotch(testCase.axis, testCase.delta, step)
+			gotStep, gotDisc := wlrootsScrollNotch(testCase.delta, step)
 			if gotStep != testCase.wantStep || gotDisc != testCase.wantDisc {
-				t.Fatalf("wlrootsScrollNotch(%d, %d) = (%d, %d), want (%d, %d)",
-					testCase.axis, testCase.delta,
+				t.Fatalf("wlrootsScrollNotch(%d) = (%d, %d), want (%d, %d)",
+					testCase.delta,
 					gotStep, gotDisc,
 					testCase.wantStep, testCase.wantDisc)
 			}

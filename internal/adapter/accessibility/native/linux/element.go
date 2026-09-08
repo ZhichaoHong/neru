@@ -568,6 +568,14 @@ func scrollAtCursorNow(deltaX, deltaY int, modifiers action.Modifiers) error {
 				value = -1
 			}
 
+			// REL_HWHEEL counts a rotation to the right as positive, while a
+			// positive deltaX means left (scroll_service.go owns that), so the
+			// horizontal axis inverts. REL_WHEEL already counts up as positive,
+			// like the caller's deltaY.
+			if axis == uinputScrollAxisHorizontal {
+				value = -value
+			}
+
 			for remainingNotches > 0 {
 				batch = append(batch, value)
 				remainingNotches--
@@ -645,16 +653,13 @@ func uinputScrollRemainder(delta, totalNotches, remainingNotches, scale int) int
 
 // wlrootsScrollNotch is one wheel notch for the virtual pointer: the pixel
 // step and the discrete count, in the Wayland convention where positive is
-// down on the vertical axis and right on the horizontal one. The caller's
-// delta is positive-up on the vertical axis, so that axis flips both values
-// together; a discrete count that disagrees with the step makes a client
+// down on the vertical axis and right on the horizontal one. The caller counts
+// the opposite way on both axes - positive is up and left - so the sign flips
+// regardless of which axis this is for, and the step and the discrete count
+// flip together; a discrete count that disagrees with the step makes a client
 // that reads axis_value120 scroll the opposite way from one that reads axis.
-func wlrootsScrollNotch(axis, delta, step int) (int, int) {
-	if delta < 0 {
-		step = -step
-	}
-
-	if axis == uinputScrollAxisVertical {
+func wlrootsScrollNotch(delta, step int) (int, int) {
+	if delta >= 0 {
 		step = -step
 	}
 
