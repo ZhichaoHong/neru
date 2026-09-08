@@ -105,7 +105,6 @@ func initializeAdapters(
 		accAdapter = accessibilityAdapter.NewAdapter(
 			logger,
 			axClient,
-			cfg.Hints.DetectMissionControl,
 		)
 	}
 

@@ -156,6 +156,30 @@ func (m *MockAppWatcherPort) EmitDeactivate(appName, bundleID string) {
 	}
 }
 
+// EmitMissionControlActivated fires every registered Mission Control activation
+// callback, or none while detection is disabled.
+//
+// The gate is here because it is part of the port contract (SetMCDetection), not
+// an implementation detail of the real watcher: a fake that dispatched regardless
+// would let a test pass over a daemon that never armed detection at all.
+func (m *MockAppWatcherPort) EmitMissionControlActivated() {
+	for _, callback := range m.snapshotMCCallbacks(func(m *MockAppWatcherPort) []func() {
+		return m.mcActivated
+	}) {
+		callback()
+	}
+}
+
+// EmitMissionControlDeactivated fires every registered Mission Control
+// deactivation callback, or none while detection is disabled.
+func (m *MockAppWatcherPort) EmitMissionControlDeactivated() {
+	for _, callback := range m.snapshotMCCallbacks(func(m *MockAppWatcherPort) []func() {
+		return m.mcDeactivated
+	}) {
+		callback()
+	}
+}
+
 // EmitScreenParametersChanged fires every registered screen-change callback.
 func (m *MockAppWatcherPort) EmitScreenParametersChanged() {
 	m.mu.Lock()
@@ -165,6 +189,19 @@ func (m *MockAppWatcherPort) EmitScreenParametersChanged() {
 	for _, callback := range callbacks {
 		callback()
 	}
+}
+
+func (m *MockAppWatcherPort) snapshotMCCallbacks(
+	pick func(*MockAppWatcherPort) []func(),
+) []func() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if !m.mcDetection {
+		return nil
+	}
+
+	return append([]func(){}, pick(m)...)
 }
 
 func (m *MockAppWatcherPort) snapshotAppCallbacks(

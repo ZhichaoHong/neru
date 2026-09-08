@@ -17,7 +17,6 @@ func newTestAdapter(t *testing.T) *accessibility.Adapter {
 	return accessibility.NewAdapter(
 		zap.NewNop(),
 		&accessibility.MockAXClient{},
-		false,
 	)
 }
 

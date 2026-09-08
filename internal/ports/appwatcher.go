@@ -49,5 +49,12 @@ type AppWatcherPort interface {
 
 	// SetMCDetection enables or disables Mission Control detection. On
 	// platforms without Mission Control this is an accepted no-op.
+	//
+	// It is a command, not a setting anyone reads back: on macOS it starts or
+	// stops the timer and window scans the detection runs on, which is why the
+	// app arms it at startup and again on every reload. While detection is
+	// disabled neither Mission Control callback fires - an implementation that
+	// dispatched them anyway would be reporting events it was told not to look
+	// for.
 	SetMCDetection(enabled bool)
 }

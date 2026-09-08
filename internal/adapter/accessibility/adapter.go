@@ -54,29 +54,18 @@ var elementSlicePool = sync.Pool{
 
 // Adapter implements ports.AccessibilityPort by wrapping the ax.Client.
 type Adapter struct {
-	logger               *zap.Logger
-	client               ax.Client
-	detectMissionControl bool
+	logger *zap.Logger
+	client ax.Client
 }
 
 // NewAdapter creates a new accessibility adapter.
-//
-// detectMissionControl is the one configuration value the adapter still holds,
-// and it is held for construction only: nothing propagates a reload to it. That
-// is the same defect general.excluded_apps had, narrowed to a macOS-only option,
-// and it is still open. Do not close it with a setter here - the copy
-// general.excluded_apps kept had one, and having one is what nobody remembered
-// to call. The live readers are lifecycle.go:238,251; the fix is for this to
-// read what they read.
 func NewAdapter(
 	logger *zap.Logger,
 	client ax.Client,
-	detectMissionControl bool,
 ) *Adapter {
 	return &Adapter{
-		logger:               logger,
-		client:               client,
-		detectMissionControl: detectMissionControl,
+		logger: logger,
+		client: client,
 	}
 }
 
@@ -104,7 +93,8 @@ func (a *Adapter) ClickableElements(
 		zap.Bool("include_notification_center", filter.IncludeNotificationCenter),
 		zap.Bool("include_stage_manager", filter.IncludeStageManager),
 		zap.Bool("include_pip", filter.IncludePIP),
-		zap.Bool("include_screen_capture", filter.IncludeScreenCapture))
+		zap.Bool("include_screen_capture", filter.IncludeScreenCapture),
+		zap.Bool("detect_mission_control", filter.DetectMissionControl))
 
 	adapterStart := time.Now()
 
@@ -112,7 +102,7 @@ func (a *Adapter) ClickableElements(
 	// answer, rather than each deciding separately as the state changes under
 	// them.
 	var missionControlActive bool
-	if a.detectMissionControl {
+	if filter.DetectMissionControl {
 		missionControlActive = a.client.IsMissionControlActive()
 	}
 

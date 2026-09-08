@@ -174,6 +174,24 @@ func (a *App) reconfigureRuntimeFromConfig(cfg *config.Config) {
 	a.updateControllerConfigs(cfg)
 	a.syncScreenShareConfig(cfg)
 	a.syncScrollInvertConfig(cfg)
+	a.syncMissionControlDetection(cfg)
+}
+
+// syncMissionControlDetection arms or disarms Mission Control detection for the
+// configuration now in force.
+//
+// It is a push rather than a read because the thing being changed is not a value
+// anyone consults: SetMCDetection reaches down to the ObjC layer and starts or
+// stops a timer and its window scans. A pull cannot start a timer. What must not
+// be pushed is the *answer* to "is detection on" - the hooks in lifecycle.go read
+// that from the live configuration, and the hint collection carries it on its
+// ElementFilter, so this call arms the platform and copies nothing.
+func (a *App) syncMissionControlDetection(cfg *config.Config) {
+	if a.appWatcher == nil {
+		return
+	}
+
+	a.appWatcher.SetMCDetection(cfg.Hints.DetectMissionControl)
 }
 
 func (a *App) updateServiceConfigs(cfg *config.Config) {

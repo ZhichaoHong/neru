@@ -31,7 +31,7 @@ func TestNewAdapter(t *testing.T) {
 	logger := zap.NewNop()
 	mockClient := &accessibility.MockAXClient{}
 
-	adapter := accessibility.NewAdapter(logger, mockClient, false)
+	adapter := accessibility.NewAdapter(logger, mockClient)
 
 	if adapter == nil {
 		t.Fatal("NewAdapter() returned nil")
@@ -48,7 +48,7 @@ func TestNewAdapter(t *testing.T) {
 func TestAdapter_UpdateClickableRoles(t *testing.T) {
 	logger := zap.NewNop()
 	mockClient := &accessibility.MockAXClient{}
-	adapter := accessibility.NewAdapter(logger, mockClient, false)
+	adapter := accessibility.NewAdapter(logger, mockClient)
 
 	newRoles := []string{axButtonRole, axLinkRole, "AXMenuItem"}
 	adapter.UpdateClickableRoles(newRoles)
@@ -65,7 +65,7 @@ func TestAdapter_UpdateClickableRoles(t *testing.T) {
 func TestAdapter_Scroll(t *testing.T) {
 	logger := zap.NewNop()
 	mockClient := &accessibility.MockAXClient{}
-	adapter := accessibility.NewAdapter(logger, mockClient, false)
+	adapter := accessibility.NewAdapter(logger, mockClient)
 	ctx := context.Background()
 
 	tests := []struct {
@@ -103,7 +103,7 @@ func TestAdapter_Scroll(t *testing.T) {
 func TestAdapter_Health(t *testing.T) {
 	logger := zap.NewNop()
 	mockClient := &accessibility.MockAXClient{MockPermissions: true}
-	adapter := accessibility.NewAdapter(logger, mockClient, false)
+	adapter := accessibility.NewAdapter(logger, mockClient)
 	ctx := context.Background()
 
 	healthErr := adapter.Health(ctx)
@@ -115,7 +115,7 @@ func TestAdapter_Health(t *testing.T) {
 func TestAdapter_MatchesFilter(t *testing.T) {
 	logger := zap.NewNop()
 	mockClient := &accessibility.MockAXClient{}
-	adapter := accessibility.NewAdapter(logger, mockClient, false)
+	adapter := accessibility.NewAdapter(logger, mockClient)
 
 	// Create test element
 	elem, _ := element.NewElement(
@@ -184,7 +184,7 @@ func TestAdapter_MatchesFilter(t *testing.T) {
 func TestAdapter_PerformActionAtPoint(t *testing.T) {
 	logger := zap.NewNop()
 	mockClient := &accessibility.MockAXClient{}
-	adapter := accessibility.NewAdapter(logger, mockClient, false)
+	adapter := accessibility.NewAdapter(logger, mockClient)
 	ctx := context.Background()
 
 	tests := []struct {
@@ -268,7 +268,7 @@ func TestAdapter_FocusedAppBundleID(t *testing.T) {
 				MockFocusedApp:    testCase.mockApp,
 				MockFocusedAppErr: testCase.mockErr,
 			}
-			adapter := accessibility.NewAdapter(logger, mockClient, false)
+			adapter := accessibility.NewAdapter(logger, mockClient)
 			ctx := context.Background()
 
 			bundleID, bundleIDErr := adapter.FocusedAppBundleID(ctx)
@@ -293,7 +293,7 @@ func TestAdapter_FocusedAppBundleID(t *testing.T) {
 func TestAdapter_Health_PermissionsDenied(t *testing.T) {
 	logger := zap.NewNop()
 	mockClient := &accessibility.MockAXClient{MockPermissions: false}
-	adapter := accessibility.NewAdapter(logger, mockClient, false)
+	adapter := accessibility.NewAdapter(logger, mockClient)
 	ctx := context.Background()
 
 	healthErr := adapter.Health(ctx)
@@ -305,7 +305,7 @@ func TestAdapter_Health_PermissionsDenied(t *testing.T) {
 func TestAdapter_Logger(t *testing.T) {
 	logger := zap.NewNop()
 	mockClient := &accessibility.MockAXClient{}
-	adapter := accessibility.NewAdapter(logger, mockClient, false)
+	adapter := accessibility.NewAdapter(logger, mockClient)
 
 	if adapter.Logger() != logger {
 		t.Error("Logger() returned wrong logger")
@@ -324,7 +324,7 @@ func TestAdapter_RolePassing(t *testing.T) {
 	initialRoles := []string{axButtonRole}
 	mockClient.SetClickableRoles(initialRoles) // Initialize mock state
 
-	adapter := accessibility.NewAdapter(logger, mockClient, false)
+	adapter := accessibility.NewAdapter(logger, mockClient)
 	ctx := context.Background()
 
 	t.Run("Frontmost Window Uses Filter Roles", func(t *testing.T) {
