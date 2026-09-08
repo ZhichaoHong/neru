@@ -1058,7 +1058,7 @@ three.
 | `rectangle_min_size`               | float | `0.01`  | Minimum normalized size of detected rectangles (e.g. `0.01` is 1% of screen/window dimensions). |
 | `rectangle_min_aspect`             | float | `0.3`   | Minimum aspect ratio (width/height) for rectangle elements.                       |
 | `rectangle_max_aspect`             | float | `10.0`  | Maximum aspect ratio (width/height) for rectangle elements.                       |
-| `button_min_confidence`            | float | `0.3`   | Minimum confidence score threshold for classifying a rectangle as a button.                       |
+| `button_min_confidence`            | float | `0.3`   | Minimum confidence score threshold for classifying a rectangle as a button. `0.0` turns the check off, which is what an OCR engine that reports no per-word confidence needs. |
 | `button_min_aspect`                | float | `0.8`   | Minimum aspect ratio for button elements.                                                         |
 | `button_max_aspect`                | float | `8.0`   | Maximum aspect ratio for button elements.                                                         |
 | `button_icon_max_size`             | int   | `48`    | Maximum width/height in pixels for square button or icon elements.                                |

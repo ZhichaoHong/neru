@@ -79,15 +79,6 @@ func TestValidateHints_PositiveUnitFloat(t *testing.T) {
 		t.Fatal("ValidateHints() expected error for 0.0 merge_iou_threshold")
 	}
 
-	// button_min_confidence cannot be 0
-	cfg = config.DefaultConfig()
-	cfg.Hints.Vision.ButtonMinConfidence = 0.0
-
-	err = cfg.ValidateHints(nil)
-	if err == nil {
-		t.Fatal("ValidateHints() expected error for 0.0 button_min_confidence")
-	}
-
 	// generic_clickable_min_confidence cannot be 0
 	cfg = config.DefaultConfig()
 	cfg.Hints.Vision.GenericClickableMinConfidence = 0.0
@@ -104,6 +95,16 @@ func TestValidateHints_PositiveUnitFloat(t *testing.T) {
 	err = cfg.ValidateHints(nil)
 	if err != nil {
 		t.Fatalf("ValidateHints() expected no error for 0.0 minimum_confidence, got %v", err)
+	}
+
+	// and so can button_min_confidence: 0 disables the confidence gate, which is
+	// what an OCR engine reporting no per-word confidence needs.
+	cfg = config.DefaultConfig()
+	cfg.Hints.Vision.ButtonMinConfidence = 0.0
+
+	err = cfg.ValidateHints(nil)
+	if err != nil {
+		t.Fatalf("ValidateHints() expected no error for 0.0 button_min_confidence, got %v", err)
 	}
 }
 

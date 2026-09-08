@@ -88,8 +88,12 @@ func (a *Adapter) DetectElements(
 		return nil, err
 	}
 
+	// Word level always: mergeWordRuns rebuilds labels from words more carefully
+	// than the engine's line segmentation does, and splitWord decides whether that
+	// merge runs rather than what the engine is asked for. See its comment for why
+	// per-line rects cost reachability.
 	words, stats, err := platformlinux.RecognizeText(img, platformlinux.OCRParams{
-		WordLevel: splitWord,
+		WordLevel: true,
 		TimeoutMS: cfg.RequestTimeoutMS,
 	})
 	if err != nil {
@@ -115,6 +119,10 @@ func (a *Adapter) DetectElements(
 		img.Rect,
 		cfg.MinimumConfidence,
 	)
+
+	if !splitWord {
+		regions = mergeWordRuns(regions)
+	}
 
 	merged := MergeRegions(regions, cfg.MergeIOUThreshold)
 

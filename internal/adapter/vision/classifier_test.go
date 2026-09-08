@@ -172,3 +172,102 @@ func TestTestClassifier(t *testing.T) {
 		t.Errorf("expected %s/clickable, got %s/%v", want, role, clickable)
 	}
 }
+
+// TestRegionClassifier_ButtonConfidenceGate pins the one config value that
+// decides whether a score-free OCR engine can produce clickable hints at all.
+//
+// Windows.Media.Ocr reports no per-word confidence, so every word arrives
+// scoring 0. With the cross-platform floor of 0.3 that region is static text and
+// cannot be hinted; with the Windows default of 0 geometry decides, which is
+// what the other platforms' scores effectively do anyway.
+func TestRegionClassifier_ButtonConfidenceGate(t *testing.T) {
+	// Button geometry: 120x30, aspect 4.0, inside the 0.8-8.0 window.
+	region := DetectedRegion{
+		Bounds: image.Rect(100, 100, 220, 130),
+		Score:  0,
+		IsText: true,
+		Label:  labelSubmit,
+	}
+
+	tests := []struct {
+		name      string
+		minConf   float64
+		want      func(classifierRoles) string
+		clickable bool
+	}{
+		{
+			name:      "a positive floor rejects an unscored word",
+			minConf:   0.3,
+			want:      func(r classifierRoles) string { return r.StaticText },
+			clickable: false,
+		},
+		{
+			name:      "a zero floor leaves geometry to decide",
+			minConf:   0,
+			want:      func(r classifierRoles) string { return r.Button },
+			clickable: true,
+		},
+	}
+
+	for vocabulary, roles := range classifierVocabularies {
+		for _, test := range tests {
+			t.Run(vocabulary+"/"+test.name, func(t *testing.T) {
+				classifier := &regionClassifier{roles: roles}
+				classifier.cfg.ButtonMinConfidence = test.minConf
+
+				role, clickable := classifier.Classify(region)
+				if want := test.want(roles); role != want {
+					t.Errorf("role %q, want %q", role, want)
+				}
+
+				if clickable != test.clickable {
+					t.Errorf("clickable %v, want %v", clickable, test.clickable)
+				}
+			})
+		}
+	}
+}
+
+// TestMergeRegions_TiebreakIsDeterministic covers suppression when no region
+// carries a score. Sorting by score alone leaves the survivor of an overlapping
+// pair decided by the order the OCR engine emitted them in, so the same screen
+// would hint differently between runs of different engines.
+func TestMergeRegions_TiebreakIsDeterministic(t *testing.T) {
+	big := DetectedRegion{Bounds: image.Rect(0, 0, 100, 100)}
+	small := DetectedRegion{Bounds: image.Rect(10, 10, 90, 90)}
+
+	for _, test := range []struct {
+		name  string
+		input []DetectedRegion
+	}{
+		{name: "larger first", input: []DetectedRegion{big, small}},
+		{name: "smaller first", input: []DetectedRegion{small, big}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			merged := MergeRegions(test.input, 0.5)
+			if len(merged) != 1 {
+				t.Fatalf("got %d regions, want 1", len(merged))
+			}
+
+			if merged[0].Bounds != big.Bounds {
+				t.Errorf("survivor %v, want the larger %v", merged[0].Bounds, big.Bounds)
+			}
+		})
+	}
+}
+
+// TestMergeRegions_TiebreakFallsBackToPosition covers two unscored regions of
+// equal area, where only reading order separates them.
+func TestMergeRegions_TiebreakFallsBackToPosition(t *testing.T) {
+	upper := DetectedRegion{Bounds: image.Rect(0, 0, 100, 100)}
+	lower := DetectedRegion{Bounds: image.Rect(5, 10, 105, 110)}
+
+	merged := MergeRegions([]DetectedRegion{lower, upper}, 0.5)
+	if len(merged) != 1 {
+		t.Fatalf("got %d regions, want 1", len(merged))
+	}
+
+	if merged[0].Bounds != upper.Bounds {
+		t.Errorf("survivor %v, want the upper-left %v", merged[0].Bounds, upper.Bounds)
+	}
+}

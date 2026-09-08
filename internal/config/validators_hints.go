@@ -526,7 +526,11 @@ func validateHintsVisionConfig(vision HintsVisionConfig) error {
 		return err
 	}
 
-	err = validatePositiveUnitFloat(
+	// 0 is a meaningful value here, not an omission: an OCR engine that reports
+	// no per-word confidence scores every word 0, and a positive floor would
+	// then reject every word. Windows sets 0 in applyPlatformDefaults for
+	// exactly that reason.
+	err = validateUnitFloat(
 		"hints.vision.button_min_confidence",
 		vision.ButtonMinConfidence,
 	)
