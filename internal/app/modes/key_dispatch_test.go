@@ -19,6 +19,8 @@ import (
 	domainhint "github.com/y3owk1n/neru/internal/domain/hint"
 	"github.com/y3owk1n/neru/internal/domain/modecmd"
 	"github.com/y3owk1n/neru/internal/domain/state"
+	"github.com/y3owk1n/neru/internal/ports"
+	portmocks "github.com/y3owk1n/neru/internal/ports/mocks"
 )
 
 type recordingMode struct {
@@ -193,6 +195,149 @@ func TestHandleKeyPressRoutesAllKeysToHintSearch(t *testing.T) {
 
 	if got := handler.hints.Context.SearchQuery(); got != "/" {
 		t.Fatalf("search query = %q, want %q", got, "/")
+	}
+}
+
+// TestHintSearchTakesShiftedLetters pins the capital a shifted keystroke types.
+// The taps name it as a combo, so "shift+c" is what arrives when the user
+// presses C — and a search box that took only single-rune keys dropped it,
+// leaving a query missing a letter the user typed and no sign of why the
+// results stopped matching.
+func TestHintSearchTakesShiftedLetters(t *testing.T) {
+	t.Parallel()
+
+	appState := state.NewAppState()
+	appState.SetMode(domain.ModeHints)
+
+	handler := newHandlerWithState(handlerState{
+		config:        &configpkg.Config{},
+		logger:        zap.NewNop(),
+		appState:      appState,
+		modifierState: state.NewModifierState(),
+		hints: &components.HintsComponent{
+			Context: &hintscomponent.Context{},
+		},
+		modes: map[domain.Mode]Mode{},
+	})
+
+	calendar, _ := element.NewElement(
+		"calendar",
+		image.Rect(0, 0, 20, 20),
+		element.RoleButton,
+		element.WithTitle("Calendar"),
+	)
+	chats, _ := element.NewElement(
+		"chats",
+		image.Rect(40, 0, 60, 20),
+		element.RoleButton,
+		element.WithTitle("Chats"),
+	)
+	collection := domainhint.NewCollection([]*domainhint.Interface{
+		mustNewModeHint("AA", calendar),
+		mustNewModeHint("AS", chats),
+	})
+
+	handler.mu.Lock()
+	handler.hints.Context.SetManager(domainhint.NewManager(handler.logger, &handler.mu))
+
+	err := handler.hints.Context.SetHints(collection)
+	if err != nil {
+		t.Fatalf("SetHints: %v", err)
+	}
+
+	handler.hints.Context.SetSearchActive(true)
+	handler.mu.Unlock()
+
+	handler.HandleKeyPress("shift+c")
+	handler.HandleKeyPress("a")
+
+	if got := handler.hints.Context.SearchQuery(); got != "Ca" {
+		t.Fatalf("search query = %q, want %q", got, "Ca")
+	}
+
+	if got := handler.hints.Context.Hints().Count(); got != 1 {
+		t.Fatalf("hints matching %q = %d, want 1", "Ca", got)
+	}
+}
+
+// layoutTap is an event tap that can say what a keystroke types, the way the
+// Windows tap does. The answers here are a US layout's.
+type layoutTap struct {
+	portmocks.MockEventTapPort
+
+	answers map[string]string
+}
+
+func (l *layoutTap) TextForKey(key string) (string, bool) {
+	text, ok := l.answers[key]
+
+	return text, ok
+}
+
+var _ ports.KeyTextResolver = (*layoutTap)(nil)
+
+// TestHintSearchTakesLayoutResolvedText pins the characters only the backend can
+// name. "shift+/" is ? on a US layout and - on a German one, so the key name
+// cannot be read as text and the search box has to ask; a keystroke the backend
+// does not answer for still falls back to the name.
+func TestHintSearchTakesLayoutResolvedText(t *testing.T) {
+	t.Parallel()
+
+	appState := state.NewAppState()
+	appState.SetMode(domain.ModeHints)
+
+	handler := newHandlerWithState(handlerState{
+		config:        &configpkg.Config{},
+		logger:        zap.NewNop(),
+		appState:      appState,
+		modifierState: state.NewModifierState(),
+		hints: &components.HintsComponent{
+			Context: &hintscomponent.Context{},
+		},
+		modes:    map[domain.Mode]Mode{},
+		eventTap: &layoutTap{answers: map[string]string{"shift+/": "?"}},
+	})
+
+	question, _ := element.NewElement(
+		"question",
+		image.Rect(0, 0, 20, 20),
+		element.RoleButton,
+		element.WithTitle("Save?"),
+	)
+	saved, _ := element.NewElement(
+		"saved",
+		image.Rect(40, 0, 60, 20),
+		element.RoleButton,
+		element.WithTitle("Saved"),
+	)
+	collection := domainhint.NewCollection([]*domainhint.Interface{
+		mustNewModeHint("AA", question),
+		mustNewModeHint("AS", saved),
+	})
+
+	handler.mu.Lock()
+	handler.hints.Context.SetManager(domainhint.NewManager(handler.logger, &handler.mu))
+
+	err := handler.hints.Context.SetHints(collection)
+	if err != nil {
+		t.Fatalf("SetHints: %v", err)
+	}
+
+	handler.hints.Context.SetSearchActive(true)
+	handler.mu.Unlock()
+
+	// The letters are keys the tap has no answer for, so they arrive through the
+	// key name; the question mark is the one only the layout knows.
+	for _, key := range []string{"s", "a", "v", "e", "shift+/"} {
+		handler.HandleKeyPress(key)
+	}
+
+	if got := handler.hints.Context.SearchQuery(); got != "save?" {
+		t.Fatalf("search query = %q, want %q", got, "save?")
+	}
+
+	if got := handler.hints.Context.Hints().Count(); got != 1 {
+		t.Fatalf("hints matching %q = %d, want 1", "save?", got)
 	}
 }
 

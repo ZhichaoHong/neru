@@ -266,10 +266,17 @@ headless-sway job reads no input devices at all.
 ⁴ **Native hint-search field.** Only macOS has a platform text control that
 owns keyboard focus and brings the system input method with it. Everywhere else
 the query is read from the event tap's key stream, so dead keys and IME
-composition do not work there and a hint search takes plain characters. The
-search *badge* on screen is a different thing and every platform draws one:
-`hints.search_input_ui.*` means what it says on all three, and the badge never
-captures a key.
+composition do not work there. The search *badge* on screen is a different thing
+and every platform draws one: `hints.search_input_ui.*` means what it says on
+all three, and the badge never captures a key.
+
+**What the key stream costs differs by backend, because it names keystrokes
+rather than characters.** `shift+1` is `!` on a US layout and `"` on a German
+one, and the name alone does not say which. Windows resolves it: the hook asks
+the active layout what the keystroke types (`ToUnicode`), so shifted characters
+and AltGr's third level both reach the query. Linux has no such translation yet
+(X11 would need `XkbLookupKeySym`, evdev `xkbcommon`), so hint search there
+takes letters, digits and unshifted punctuation, and drops the rest.
 
 ⁵ **Screen capture** is taken per backend rather than through the desktop
 portal everywhere, because a consent picker in front of a hint refresh is a

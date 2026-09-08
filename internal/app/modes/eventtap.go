@@ -121,3 +121,18 @@ func (h *handlerState) allowsOverlayKeyboardPassthrough() bool {
 
 	return ok && reporter.AllowsOverlayKeyboardPassthrough()
 }
+
+// textForKey returns the text a key combo types on the active keyboard layout.
+//
+// Backends that cannot answer do not implement the extension, and the empty
+// answer sends the caller back to reading the key name - which reaches the
+// letters and no more, since a shifted punctuation key depends on a layout only
+// the backend knows.
+func (h *handlerState) textForKey(key string) (string, bool) {
+	resolver, ok := h.eventTap.(ports.KeyTextResolver)
+	if !ok {
+		return "", false
+	}
+
+	return resolver.TextForKey(key)
+}

@@ -715,6 +715,70 @@ func TestNormalizeKeyForComparison_FullwidthChars(t *testing.T) {
 	}
 }
 
+// TestShiftedCharacter covers the keys a text field fed from the key stream has
+// to recognize as a character, and the ones it must refuse rather than guess at.
+func TestShiftedCharacter(t *testing.T) {
+	tests := []struct {
+		name      string
+		key       string
+		want      string
+		isShifted bool
+	}{
+		{
+			name:      "a shifted letter is the capital",
+			key:       "shift+c",
+			want:      "C",
+			isShifted: true,
+		},
+		{
+			name:      "the display spelling reaches the same character",
+			key:       "Shift+C",
+			want:      "C",
+			isShifted: true,
+		},
+		{
+			name:      "a non-latin letter capitalizes too",
+			key:       "shift+ä",
+			want:      "Ä",
+			isShifted: true,
+		},
+		{
+			name: "an unshifted letter is not a shifted one",
+			key:  "c",
+		},
+		{
+			name: "a digit's shifted form belongs to the layout",
+			key:  "shift+1",
+		},
+		{
+			name: "punctuation's shifted form belongs to the layout",
+			key:  "shift+-",
+		},
+		{
+			name: "a named key is not text",
+			key:  "shift+return",
+		},
+		{
+			name: "a binding carrying another modifier is not text",
+			key:  "ctrl+shift+c",
+		},
+		{
+			name: "the shift key alone types nothing",
+			key:  "shift",
+		},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			got, isShifted := config.ShiftedCharacter(testCase.key)
+			if isShifted != testCase.isShifted || got != testCase.want {
+				t.Errorf("ShiftedCharacter(%q) = (%q, %v), want (%q, %v)",
+					testCase.key, got, isShifted, testCase.want, testCase.isShifted)
+			}
+		})
+	}
+}
+
 func TestNormalizeKeyForComparison_ModifierComboAliases(t *testing.T) {
 	tests := []struct {
 		name     string
