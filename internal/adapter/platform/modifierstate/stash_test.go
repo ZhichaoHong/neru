@@ -24,6 +24,7 @@ type stashScenario struct {
 	name     string
 	why      string
 	presses  []stashedPress
+	forgets  []uint32
 	releases []expectedRelease
 }
 
@@ -193,6 +194,116 @@ func TestStash_Put_MergesASecondPressOfAButtonAlreadyDown(t *testing.T) {
 	})
 }
 
+// TestStash_ForgetKey_DropsWhatTheUserLetGoOf covers the release the drag can
+// otherwise not see: the user letting go of a suppressed modifier while the
+// button is still down.
+func TestStash_ForgetKey_DropsWhatTheUserLetGoOf(t *testing.T) {
+	runStashScenarios(t, []stashScenario{
+		{
+			name: "leaves nothing to press back for a key the user released",
+			why: "A keyboard-driven drag lets go of the chord's modifier before " +
+				"typing the keys that steer it. Pressing that key back when the " +
+				"button goes up leaves it held with nothing to release it, so " +
+				"every key afterwards arrives modified.",
+			presses: []stashedPress{{
+				button: leftButton,
+				plan:   modifierstate.Plan{Suppress: edits(shiftLeft)},
+			}},
+			forgets:  []uint32{shiftLeft},
+			releases: []expectedRelease{{button: leftButton, wantHeld: true}},
+		},
+		{
+			name: "keeps the keys the user is still holding",
+			why: "Only the released key loses its restore. A modifier held " +
+				"through the whole drag still has to be pressed back, or the " +
+				"drag drops it out of everything the user does next.",
+			presses: []stashedPress{{
+				button: leftButton,
+				plan:   modifierstate.Plan{Suppress: edits(shiftLeft, controlLeft)},
+			}},
+			forgets: []uint32{shiftLeft},
+			releases: []expectedRelease{{
+				button:       leftButton,
+				wantHeld:     true,
+				wantSuppress: edits(controlLeft),
+			}},
+		},
+		{
+			name: "leaves what the hold pressed itself alone",
+			why: "A key Neru pressed to present a requested modifier is " +
+				"released unconditionally at the end, and the user releasing " +
+				"the same key does not change where it has to land.",
+			presses: []stashedPress{{
+				button: leftButton,
+				plan:   modifierstate.Plan{Press: edits(shiftLeft)},
+			}},
+			forgets: []uint32{shiftLeft},
+			releases: []expectedRelease{{
+				button:    leftButton,
+				wantHeld:  true,
+				wantPress: edits(shiftLeft),
+			}},
+		},
+		{
+			name: "ignores a key no drag suppressed",
+			why: "The hook reports every modifier release, most of them during " +
+				"no drag at all, so an unrelated key must not disturb a plan.",
+			presses: []stashedPress{{
+				button: leftButton,
+				plan:   modifierstate.Plan{Suppress: edits(controlLeft)},
+			}},
+			forgets: []uint32{altLeft},
+			releases: []expectedRelease{{
+				button:       leftButton,
+				wantHeld:     true,
+				wantSuppress: edits(controlLeft),
+			}},
+		},
+		{
+			name: "reaches every button still down",
+			why: "Two buttons can be down at once and the user has one set of " +
+				"modifier keys: a release belongs to both drags.",
+			presses: []stashedPress{
+				{
+					button: leftButton,
+					plan:   modifierstate.Plan{Suppress: edits(shiftLeft)},
+				},
+				{
+					button: rightButton,
+					plan:   modifierstate.Plan{Suppress: edits(shiftLeft, altLeft)},
+				},
+			},
+			forgets: []uint32{shiftLeft},
+			releases: []expectedRelease{
+				{button: leftButton, wantHeld: true},
+				{
+					button:       rightButton,
+					wantHeld:     true,
+					wantSuppress: edits(altLeft),
+				},
+			},
+		},
+	})
+}
+
+// TestStash_ForgetKey_LeavesTheMergedPlanItSharesWith pins that forgetting edits
+// no plan but the stashed one. A merged plan appends onto the slice the first
+// press handed over, so a forget that wrote in place would reach back into the
+// caller's own plan value.
+func TestStash_ForgetKey_LeavesTheMergedPlanItSharesWith(t *testing.T) {
+	var stash modifierstate.Stash
+
+	first := modifierstate.Plan{Suppress: edits(shiftLeft, controlLeft)}
+
+	stash.Put(leftButton, first)
+	stash.Put(rightButton, modifierstate.Plan{Suppress: edits(shiftLeft)})
+	stash.ForgetKey(shiftLeft)
+
+	if !equalEdits(first.Suppress, edits(shiftLeft, controlLeft)) {
+		t.Fatalf("ForgetKey rewrote the caller's plan to %v", first.Suppress)
+	}
+}
+
 // TestStash_Put_SerializesConcurrentPresses pins the lock. Presses and releases
 // arrive on whichever goroutine ran the action, so the map behind the stash is
 // reachable from more than one at a time.
@@ -249,6 +360,10 @@ func runStashScenarios(t *testing.T, scenarios []stashScenario) {
 
 			for _, press := range testCase.presses {
 				stash.Put(press.button, press.plan)
+			}
+
+			for _, keycode := range testCase.forgets {
+				stash.ForgetKey(keycode)
 			}
 
 			for step, release := range testCase.releases {

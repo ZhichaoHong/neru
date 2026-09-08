@@ -99,12 +99,20 @@ var (
 
 // noteModifierReleased records a physical modifier key-up seen by the
 // keyboard hook. Outside a hold it records nothing.
-func noteModifierReleased(vk uint32) {
+//
+// A drag in flight is told separately, because its record cannot live in the
+// tracking window: the drag releases modifierHoldMu so a scroll fired mid-drag
+// can take a hold of its own, and that hold begins and ends a window of its own
+// on top. The stash holds the plan the mouse-up will replay, so the key is
+// dropped from that plan instead and survives however long the drag lasts.
+func noteModifierReleased(virtualKey uint32) {
+	windowsDragModifiers.ForgetKey(virtualKey)
+
 	releasedDuringHoldMu.Lock()
 	defer releasedDuringHoldMu.Unlock()
 
 	if releasedDuringHold != nil {
-		releasedDuringHold[vk] = struct{}{}
+		releasedDuringHold[virtualKey] = struct{}{}
 	}
 }
 
@@ -230,12 +238,17 @@ var windowsDragModifiers modifierstate.Stash
 // the end of the press would make a shift+drag an unmodified one from the
 // first pixel of movement.
 //
-// What is kept is the plan alone. The lock and the record of physical releases
-// both go here, because a drag is as long as the user makes it and a scroll
-// fired mid-drag needs both for itself. That leaves the release with the same
-// bias X11's drag carries: a suppressed key the user lets go of mid-drag is
-// pressed back at the end and reads as held until they tap it once more,
-// which is safer than dropping a modifier they are still holding.
+// What is kept is the plan alone. The lock and the tracking window both go here,
+// because a drag is as long as the user makes it and a scroll fired mid-drag
+// needs both for itself. Physical releases still reach the drag: the hook drops
+// the key from the stashed plan (noteModifierReleased), so the mouse-up presses
+// back only what the user still has hold of.
+//
+// Without that the release would carry the bias X11's drag carries - a
+// suppressed key the user lets go of mid-drag is pressed back at the end and
+// reads as held until they tap it once more - and for a keyboard-driven drag
+// that is every drag, because the chord that presses the button has to be let go
+// of before the keys that steer it can be typed.
 func (h modifierHold) keepForRelease(button action.MouseButton) {
 	defer modifierHoldMu.Unlock()
 
