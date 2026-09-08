@@ -17,6 +17,7 @@ type MockSystrayPort struct {
 	icon           []byte
 	iconIsTemplate bool
 	items          []*MockSystrayMenuItem
+	iconErr        error
 }
 
 // SetTitle implements ports.SystrayPort.
@@ -61,6 +62,23 @@ func (m *MockSystrayPort) AddSeparator() {
 	defer m.mu.Unlock()
 
 	m.items = append(m.items, newMockSystrayMenuItem(""))
+}
+
+// IconStatus implements ports.SystrayPort.
+func (m *MockSystrayPort) IconStatus() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	return m.iconErr
+}
+
+// SetIconStatus makes IconStatus report err, standing in for a host that refused
+// the icon.
+func (m *MockSystrayPort) SetIconStatus(err error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.iconErr = err
 }
 
 // Title returns the last value passed to SetTitle.

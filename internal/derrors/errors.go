@@ -89,6 +89,9 @@ const (
 	// CodeChainBail indicates a chain action should abort (e.g. user canceled
 	// a mode without making a selection).
 	CodeChainBail Code = "CHAIN_BAIL"
+
+	// CodeSystrayFailed indicates the platform's tray rejected an operation.
+	CodeSystrayFailed Code = "SYSTRAY_FAILED"
 )
 
 // Error is a domain error with code, message, and optional cause.

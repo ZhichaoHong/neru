@@ -16,6 +16,7 @@ var (
 	setTemplateIcon = linux.SetTemplateIcon
 	addMenuItem     = linux.AddMenuItem
 	addSeparator    = linux.AddSeparator
+	iconStatus      = linux.IconStatus
 )
 
 // Run starts the tray event loop and blocks until Quit.
