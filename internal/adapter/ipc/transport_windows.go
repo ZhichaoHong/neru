@@ -26,6 +26,26 @@ const (
 	// pipePrefix is the stem every neru endpoint name is built from.
 	pipePrefix = `\\.\pipe\neru`
 
+	// pipeBufferBytes is the buffer quota asked for on each side of the pipe.
+	//
+	// A zero PipeConfig buffer size asks the kernel for a zero quota, and a
+	// command whose encoded length is exactly one byte past a power of two then
+	// deadlocks: the client's write never completes, the server's read never sees
+	// the command, and the exchange ends when the read deadline closes the
+	// connection five seconds later. Measured at 65, 129, 257, 513 and 1025 bytes,
+	// on every size between 57 and 1253 that is not one of those, and on all of
+	// them again with a quota set. Which layer splits the transfer on those
+	// boundaries is not established; that it stops once the pipe has a buffer is.
+	//
+	// The quota is a ceiling the kernel fills on demand, not an allocation, so
+	// sizing it to the largest command that can arrive costs nothing per
+	// connection and leaves no length that has to be split.
+	//
+	// This is why neru action scroll_right was unusable in a release build while
+	// scroll_left worked: with an eight-character version stamp in the payload,
+	// the one-character-longer action name lands the command on exactly 65 bytes.
+	pipeBufferBytes = maxCommandBytes
+
 	// legacyPipePath is the machine-wide name neru used before the endpoint was
 	// scoped to one user.
 	//
@@ -110,6 +130,8 @@ func listenEndpoint(ctx context.Context, path string) (net.Listener, error) {
 
 	listener, listenErr := winio.ListenPipe(path, &winio.PipeConfig{
 		SecurityDescriptor: pipeSecurityDescriptor(sid),
+		InputBufferSize:    pipeBufferBytes,
+		OutputBufferSize:   pipeBufferBytes,
 	})
 	if listenErr != nil {
 		return nil, derrors.Wrapf(
