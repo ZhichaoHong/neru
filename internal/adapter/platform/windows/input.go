@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"image"
+	"math"
 	"unsafe"
 
 	"github.com/y3owk1n/neru/internal/domain/action"
@@ -56,6 +57,14 @@ const (
 	// 120 per notch, so a pixel is four units and an application accumulates
 	// the fraction the way it does for a high-resolution wheel.
 	wheelUnitsPerPixel = wheelDelta / ScrollPixelsPerNotch
+	// maxWheelPixels is how far one wheel event can carry a caller's delta.
+	// mouseData reaches the target window as the signed short in
+	// WM_MOUSEWHEEL's high word, so a larger count arrives as its low 16 bits:
+	// scroll_step_full's 1000000 pixels are 4000000 units and land as 2304, a
+	// 19-notch nudge where a whole document was asked for. Capping travels 273
+	// notches instead, which is the same bargain X11 makes at its 50-click
+	// ceiling (x11ScrollAtCursor's maxClicks).
+	maxWheelPixels = math.MaxInt16 / wheelUnitsPerPixel
 )
 
 // mouseInput and input mirror Win32 MOUSEINPUT/INPUT on 64-bit Windows (40 bytes).
@@ -271,6 +280,12 @@ type wheelEvent struct {
 	data  uint32
 }
 
+// capWheelPixels bounds one axis of a caller's delta to what a wheel event
+// carries, keeping the direction the binding asked for.
+func capWheelPixels(delta int) int {
+	return min(max(delta, -maxWheelPixels), maxWheelPixels)
+}
+
 // wheelEvents turns a pixel scroll delta into the wheel records SendInput
 // needs, one per axis that moves. Deltas follow Neru's shared convention:
 // positive deltaY scrolls up and positive deltaX scrolls left, which is what
@@ -307,10 +322,18 @@ func wheelRecords(vertical, horizontal int32) []wheelEvent {
 // arrives as a sequence of eased chunks, which is what the same setting does
 // on macOS and Linux. The chunks are integer 120ths of a notch, so unlike X11
 // the steps go below a wheel notch.
+//
+// Each axis is capped before that split rather than inside the injection, so
+// switching smooth_scroll on changes when a scroll arrives and not how far it
+// goes: a per-chunk cap would let an animated go_bottom travel as many times
+// further as there are steps.
 func ScrollWheel(deltaX, deltaY int, modifiers action.Modifiers) error {
 	if deltaX == 0 && deltaY == 0 {
 		return nil
 	}
+
+	deltaX = capWheelPixels(deltaX)
+	deltaY = capWheelPixels(deltaY)
 
 	cfg := currentWindowsConfig()
 	if cfg != nil && cfg.SmoothScroll.Enabled {
