@@ -113,6 +113,7 @@ type Grid struct {
 	colChars       []rune          // Characters used for column labels
 	maxLabelLength int             // Longest coordinate the planner may choose
 	bounds         image.Rectangle // Screen bounds
+	scale          float64         // Bounds pixels per logical unit; 1 when bounds are already logical
 	cells          []*Cell         // All cells with uniform-length coordinates
 	index          map[string]*Cell
 	prefixes       map[string]bool // Set of all coordinate prefixes for fast lookup
@@ -169,15 +170,31 @@ func NewGridWithLabels(
 }
 
 // Options are the label inputs that affect a grid's geometry.
+//
+// Scale says how many bounds pixels one logical unit is worth, which is what a
+// platform reporting physical pixels has to declare; zero or one means the
+// bounds are logical already, as macOS and Wayland hand them out.
 type Options struct {
 	Characters     string
 	RowLabels      string
 	ColLabels      string
 	MaxLabelLength int
+	Scale          float64
 }
 
 // NewGridWithOptions creates a grid from label options. MaxLabelLength limits
 // the coarse coordinate to 2–4 keypresses; zero keeps the default limit of 4.
+//
+// The cell-size constants the sizer picks from are intentions about apparent
+// size: a cell the user can aim at, a label they can read. On a platform
+// reporting physical pixels those constants buy less glass the higher the
+// monitor's scaling is set, and the sizer answers with cells too small to read -
+// 3268 of them on a 4K monitor at 150%, against the 2304 the same monitor plans
+// at 100%. Options.Scale divides the extent the sizer reads so the two agree.
+//
+// Cells are still cut from the pixels the bounds carry, so the grid covers the
+// same screen either way, and the counts that come back stay dimensionless. At
+// scale 1 the arithmetic is what it was before the field existed.
 func NewGridWithOptions(options Options, bounds image.Rectangle, logger *zap.Logger) *Grid {
 	// Constructors in this tree accept a nil logger and fall back to a no-op
 	// rather than panicking on first use.
@@ -186,6 +203,7 @@ func NewGridWithOptions(options Options, bounds image.Rectangle, logger *zap.Log
 	}
 
 	maxLabelLength := normalizeMaxLabelLength(options.MaxLabelLength)
+	scale := normalizeScale(options.Scale)
 
 	logger.Debug("Creating new grid",
 		zap.String("characters", options.Characters),
@@ -193,10 +211,11 @@ func NewGridWithOptions(options Options, bounds image.Rectangle, logger *zap.Log
 		zap.String("colLabels", options.ColLabels),
 		zap.Int("max_label_length", maxLabelLength),
 		zap.Int("bounds_width", bounds.Dx()),
-		zap.Int("bounds_height", bounds.Dy()))
+		zap.Int("bounds_height", bounds.Dy()),
+		zap.Float64("scale", scale))
 
 	alpha := newGridAlphabet(options.Characters, options.RowLabels, options.ColLabels)
-	cacheKey := newCacheKey(alpha, maxLabelLength, bounds)
+	cacheKey := newCacheKey(alpha, maxLabelLength, bounds, scale)
 
 	width := bounds.Max.X - bounds.Min.X
 	height := bounds.Max.Y - bounds.Min.Y
@@ -209,7 +228,7 @@ func NewGridWithOptions(options Options, bounds image.Rectangle, logger *zap.Log
 		if cells, ok := gridCache.get(cacheKey); ok {
 			logger.Debug("Grid cache hit", zap.Int("cell_count", len(cells)))
 
-			return newGridFromCells(alpha, maxLabelLength, bounds, cells)
+			return newGridFromCells(alpha, maxLabelLength, bounds, scale, cells)
 		}
 
 		logger.Debug("Grid cache miss")
@@ -224,6 +243,7 @@ func NewGridWithOptions(options Options, bounds image.Rectangle, logger *zap.Log
 			characters:     alpha.characters,
 			maxLabelLength: maxLabelLength,
 			bounds:         bounds,
+			scale:          scale,
 			cells:          []*Cell{},
 			index:          make(map[string]*Cell),
 			prefixes:       make(map[string]bool),
@@ -240,6 +260,7 @@ func NewGridWithOptions(options Options, bounds image.Rectangle, logger *zap.Log
 		height,
 		alpha,
 		maxLabelLength,
+		scale,
 	)
 
 	baseCellWidth := width / plan.dimensions.Cols
@@ -271,7 +292,18 @@ func NewGridWithOptions(options Options, bounds image.Rectangle, logger *zap.Log
 		logger.Debug("Grid cache store", zap.Int("cell_count", len(cells)))
 	}
 
-	return newGridFromCells(alpha, maxLabelLength, bounds, cells)
+	return newGridFromCells(alpha, maxLabelLength, bounds, scale, cells)
+}
+
+// normalizeScale answers a caller that supplied no scale, or one this cannot
+// read. A scale below 1 would ask for cells larger than the constants describe,
+// and 0 would divide by zero.
+func normalizeScale(scale float64) float64 {
+	if math.IsNaN(scale) || scale < 1 {
+		return 1
+	}
+
+	return scale
 }
 
 // gridAlphabet is the normalized character sets a grid is labeled from.
@@ -369,6 +401,7 @@ func newGridFromCells(
 	alpha gridAlphabet,
 	maxLabelLength int,
 	bounds image.Rectangle,
+	scale float64,
 	cells []*Cell,
 ) *Grid {
 	index := make(map[string]*Cell, len(cells))
@@ -382,6 +415,7 @@ func newGridFromCells(
 		colChars:       alpha.colChars,
 		maxLabelLength: maxLabelLength,
 		bounds:         bounds,
+		scale:          scale,
 		cells:          cells,
 		index:          index,
 		prefixes:       buildPrefixIndex(cells),
@@ -401,14 +435,23 @@ type gridPlan struct {
 // region shape for a screen. A two-key limit gets a staged 2D layout only when
 // it shortens the automatically selected label; an automatic two-key grid and
 // longer labels retain their existing region layouts.
+//
+// width and height are the screen's own pixels; scale says how many of them one
+// logical unit is worth. Every sizing decision is made on the logical extent,
+// because the cell-size constants describe apparent size, and the counts that
+// come back are dimensionless. See NewGridWithOptions.
 func planGridDimensions(
 	width, height int,
 	alpha gridAlphabet,
 	maxLabelLength int,
+	scale float64,
 ) gridPlan {
 	numChars := len(alpha.chars)
 	numRowChars := len(alpha.rowChars)
 	numColChars := len(alpha.colChars)
+
+	width = logicalExtent(width, scale)
+	height = logicalExtent(height, scale)
 
 	minCellSize, maxCellSize := calculateOptimalCellSizes(width, height)
 	candidates := findValidGridConfigurations(width, height, minCellSize, maxCellSize)
@@ -521,6 +564,16 @@ func (g *Grid) ColLabels() string {
 // MaxLabelLength returns the coarse-coordinate limit used to plan the grid.
 func (g *Grid) MaxLabelLength() int {
 	return g.maxLabelLength
+}
+
+// Scale returns the bounds pixels per logical unit this grid was planned with.
+//
+// It is here for the caller rebuilding a grid over the same screen - a config
+// reload that changed the character set - which has the old grid but not the
+// port that answered for the scale. Rebuilding at 1 would silently re-plan the
+// dense grid the scale exists to avoid.
+func (g *Grid) Scale() float64 {
+	return g.scale
 }
 
 // ValidCharacters returns all characters that can appear in grid coordinates.

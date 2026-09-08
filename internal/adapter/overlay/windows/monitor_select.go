@@ -47,16 +47,22 @@ func monitorSelectFontOr(value, fallback int) float64 {
 
 // monitorSelectPanelLayout computes, in global pixels, the panel rect centered
 // on the monitor, the label and subtitle text rects, and the corner radius.
-// It is the Linux layout at scale 1: the layered windows here are placed in
-// the physical pixels EnumDisplayMonitors reports, so there is no factor to
-// apply. Padding and radius honor the same "auto" (-1) config sentinels.
+// It is the Linux layout with the monitor's own scale: the windows here are
+// placed in the physical pixels EnumDisplayMonitors reports, so a size meant to
+// look the same on every monitor has a factor to apply. Padding and radius honor
+// the same "auto" (-1) config sentinels.
 func monitorSelectPanelLayout(
 	monitor image.Rectangle,
 	label, subtitle string,
 	style manager.MonitorSelectStyle,
+	scale float64,
 ) (image.Rectangle, image.Rectangle, image.Rectangle, float64) {
-	labelFont := monitorSelectFontOr(style.FontSize, monitorSelectDefaultFont)
-	subFont := monitorSelectFontOr(style.SubtitleFontSize, monitorSelectDefaultSubFont)
+	// Scaled here rather than by the caller because every dimension below is
+	// derived from a font size: the padding, the text extents, and so the panel
+	// itself. A panel planned from the logical fonts would clip the labels drawn
+	// at the scaled ones.
+	labelFont := monitorSelectFontOr(style.FontSize, monitorSelectDefaultFont) * scale
+	subFont := monitorSelectFontOr(style.SubtitleFontSize, monitorSelectDefaultSubFont) * scale
 
 	padX := style.PaddingX
 	if style.PaddingX < 0 {
@@ -136,9 +142,11 @@ func (m *Manager) DrawMonitorSelect(
 	border := badge.ParseHexARGB(style.BorderColor)
 	text := badge.ParseHexARGB(style.TextColor)
 	subtitleText := badge.ParseHexARGB(style.SubtitleTextColor)
-	borderWidth := float64(style.BorderWidth)
-	labelFont := monitorSelectFontOr(style.FontSize, monitorSelectDefaultFont)
-	subtitleFont := monitorSelectFontOr(style.SubtitleFontSize, monitorSelectDefaultSubFont)
+	// The sizes stay unscaled here because the factor is per monitor: see the
+	// loop below.
+	baseBorderWidth := float64(style.BorderWidth)
+	baseLabelFont := monitorSelectFontOr(style.FontSize, monitorSelectDefaultFont)
+	baseSubtitleFont := monitorSelectFontOr(style.SubtitleFontSize, monitorSelectDefaultSubFont)
 
 	drawn := 0
 
@@ -158,6 +166,15 @@ func (m *Manager) DrawMonitorSelect(
 
 		drawn++
 
+		// The scale is read per target, not once for the frame: on a mixed-DPI
+		// desk the panels are meant to look the same size, not to be the same
+		// number of pixels. Each target has a window of its own covering exactly
+		// that monitor, so the window's own scale is the monitor's.
+		scale := win.Scale()
+		labelFont := baseLabelFont * scale
+		subtitleFont := baseSubtitleFont * scale
+		borderWidth := baseBorderWidth * scale
+
 		// Every rect below is global; the window's own pixels start at the
 		// monitor's origin.
 		local := target.Bounds.Sub(target.Bounds.Min)
@@ -169,7 +186,7 @@ func (m *Manager) DrawMonitorSelect(
 		}
 
 		panel, labelRect, subtitleRect, radius := monitorSelectPanelLayout(
-			target.Bounds, target.Label, target.Subtitle, style,
+			target.Bounds, target.Label, target.Subtitle, style, scale,
 		)
 		panel = panel.Sub(target.Bounds.Min)
 		labelRect = labelRect.Sub(target.Bounds.Min)
@@ -181,11 +198,23 @@ func (m *Manager) DrawMonitorSelect(
 			win.StrokeRoundedRect(panel, radius, border, borderWidth)
 		}
 
-		win.DrawTextCentered(target.Label, labelRect, style.FontFamily, labelFont, text)
+		win.DrawTextCentered(
+			target.Label,
+			labelRect,
+			style.FontFamily,
+			labelFont,
+			winplatform.FontWeightBold,
+			text,
+		)
 
 		if target.Subtitle != "" {
 			win.DrawTextCentered(
-				target.Subtitle, subtitleRect, style.SubtitleFontFamily, subtitleFont, subtitleText,
+				target.Subtitle,
+				subtitleRect,
+				style.SubtitleFontFamily,
+				subtitleFont,
+				winplatform.FontWeightRegular,
+				subtitleText,
 			)
 		}
 

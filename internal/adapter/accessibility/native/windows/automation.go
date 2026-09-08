@@ -230,9 +230,7 @@ func failed(hresult uintptr) bool {
 // given top-level window handle. It returns nil on any failure; callers treat
 // an empty result as "no hints", never as a crash.
 func enumerateClickableElements(hwnd uintptr, keptRoles map[string]struct{}) []winElement {
-	if len(keptRoles) == 0 {
-		keptRoles = defaultClickableRoles
-	}
+	keptRoles = effectiveClickableRoles(keptRoles)
 
 	if hwnd == 0 {
 		return nil
@@ -502,3 +500,15 @@ var defaultClickableRoles = func() map[string]struct{} {
 
 	return set
 }()
+
+// effectiveClickableRoles resolves the role filter a caller supplied into the one
+// to apply. Every path that filters by role goes through it, so the UIA
+// enumeration and the caption-button fallback can never disagree about what an
+// empty filter means.
+func effectiveClickableRoles(keptRoles map[string]struct{}) map[string]struct{} {
+	if len(keptRoles) == 0 {
+		return defaultClickableRoles
+	}
+
+	return keptRoles
+}

@@ -380,9 +380,12 @@ func (m *Manager) DrawHintSearchInput(
 	pos := frame.Position()
 	width := frame.Width()
 
+	// The badge is sized from the scaled font while the text call is handed the
+	// logical one, because drawTextCentered applies the factor itself.
 	fontSize := float64(max(style.FontSize(), 1))
-	paddingX := badge.AutoPadding(fontSize, style.PaddingX(), true)
-	paddingY := badge.AutoPadding(fontSize, style.PaddingY(), false)
+	scaledFont := fontSize * m.win.scale()
+	paddingX := badge.AutoPadding(scaledFont, style.PaddingX(), true)
+	paddingY := badge.AutoPadding(scaledFont, style.PaddingY(), false)
 
 	// / query  count /  format
 	label := "/ " + query
@@ -392,8 +395,8 @@ func (m *Manager) DrawHintSearchInput(
 		label += " /"
 	}
 
-	badgeWidth := badge.EstimateTextWidth(label, fontSize) + paddingX*winPaddingMultiplier
-	badgeHeight := badge.EstimateTextHeight(fontSize) + paddingY*winPaddingMultiplier
+	badgeWidth := badge.EstimateTextWidth(label, scaledFont) + paddingX*winPaddingMultiplier
+	badgeHeight := badge.EstimateTextHeight(scaledFont) + paddingY*winPaddingMultiplier
 	bounds := image.Rect(pos.X, pos.Y, pos.X+max(badgeWidth, width), pos.Y+badgeHeight)
 
 	m.win.drawFilledRect(
@@ -408,6 +411,9 @@ func (m *Manager) DrawHintSearchInput(
 		bounds,
 		style.FontFamily(),
 		fontSize,
+		// Regular, not bold: macOS draws this badge with the plain system
+		// font (_searchInputFont) while hint labels are the bold one.
+		winplatform.FontWeightRegular,
 		badge.ParseHexARGB(style.TextColor()),
 	)
 
@@ -456,15 +462,21 @@ func (m *Manager) DrawModeIndicator(cursorX, cursorY int) {
 	m.renderMu.Lock()
 	defer m.renderMu.Unlock()
 
+	// The badge follows the cursor and lives in its own window, so its scale is
+	// the cursor's monitor rather than the shared overlay's. Font and border
+	// scale because they are apparent sizes; the configured offsets do not,
+	// matching the X11 backend's rule for configured pixel offsets.
+	scale := winplatform.ScreenScaleAt(image.Pt(cursorX, cursorY))
+
 	offsetX := cfg.UI.IndicatorXOffset
 	offsetY := cfg.UI.IndicatorYOffset
-	fontSize := float64(max(cfg.UI.FontSize, 1))
+	fontSize := float64(max(cfg.UI.FontSize, 1)) * scale
 
 	paddingX := badge.AutoPadding(fontSize, cfg.UI.PaddingX, true)
 	paddingY := badge.AutoPadding(fontSize, cfg.UI.PaddingY, false)
 	badgeWidth := badge.EstimateTextWidth(label, fontSize) + paddingX*winPaddingMultiplier
 	badgeHeight := badge.EstimateTextHeight(fontSize) + paddingY*winPaddingMultiplier
-	borderWidth := max(cfg.UI.BorderWidth, 0)
+	borderWidth := int(float64(max(cfg.UI.BorderWidth, 0)) * scale)
 
 	posX := cursorX + offsetX - borderWidth
 	posY := cursorY + offsetY - borderWidth
@@ -538,6 +550,7 @@ func (m *Manager) DrawModeIndicator(cursorX, cursorY int) {
 		badgeBounds,
 		ports.ResolveFont(cfg.UI.FontFamily),
 		fontSize,
+		winplatform.FontWeightBold,
 		badge.ParseHexARGB(textColor),
 	)
 
@@ -563,13 +576,17 @@ func (m *Manager) DrawStickyModifiersIndicator(cursorX, cursorY int, symbols str
 	}
 
 	indicatorUI := m.StickyModifiersOverlay().UIConfig()
-	fontSize := float64(max(indicatorUI.FontSize, 1))
+
+	// Scaled by the cursor's monitor, for the reason DrawModeIndicator states.
+	scale := winplatform.ScreenScaleAt(image.Pt(cursorX, cursorY))
+
+	fontSize := float64(max(indicatorUI.FontSize, 1)) * scale
 
 	paddingX := badge.AutoPadding(fontSize, indicatorUI.PaddingX, true)
 	paddingY := badge.AutoPadding(fontSize, indicatorUI.PaddingY, false)
 	badgeWidth := badge.EstimateTextWidth(symbols, fontSize) + paddingX*winPaddingMultiplier
 	badgeHeight := badge.EstimateTextHeight(fontSize) + paddingY*winPaddingMultiplier
-	borderWidth := max(indicatorUI.BorderWidth, 0)
+	borderWidth := int(float64(max(indicatorUI.BorderWidth, 0)) * scale)
 
 	offsetX := indicatorUI.IndicatorXOffset
 	offsetY := indicatorUI.IndicatorYOffset
@@ -648,6 +665,7 @@ func (m *Manager) DrawStickyModifiersIndicator(cursorX, cursorY int, symbols str
 		badgeBounds,
 		ports.ResolveFont(indicatorUI.FontFamily),
 		fontSize,
+		winplatform.FontWeightBold,
 		badge.ParseHexARGB(textColor),
 	)
 
@@ -689,9 +707,14 @@ func (m *Manager) DrawMouseActionIndicator(
 		maxScale = 1.0
 	}
 
-	baseSize := float64(max(style.Size, 1))
+	// The indicator's configured size is an apparent size, like a font, so it
+	// scales with the monitor it is drawn on. The animation is handed the same
+	// factor, since it draws inside the window sized here.
+	screenScale := winplatform.ScreenScaleAt(point)
+
+	baseSize := float64(max(style.Size, 1)) * screenScale
 	maxIndicatorSize := baseSize * maxScale
-	borderWidth := float64(max(style.BorderWidth, 0))
+	borderWidth := float64(max(style.BorderWidth, 0)) * screenScale
 
 	// Create window bounds to fit the maximum indicator size plus border.
 	const paddingFactor = 4
@@ -729,7 +752,7 @@ func (m *Manager) DrawMouseActionIndicator(
 	ctx, cancel := context.WithCancel(context.Background())
 	m.mouseActionCancel = cancel
 
-	go m.animateMouseAction(ctx, winSize, style)
+	go m.animateMouseAction(ctx, winSize, screenScale, style)
 }
 
 // DrawGrid draws the grid overlay.
@@ -927,6 +950,7 @@ func (m *Manager) SetKeyboardCaptureEnabled(_ bool) {}
 func (m *Manager) animateMouseAction(
 	ctx context.Context,
 	winSize int,
+	screenScale float64,
 	style ports.MouseActionIndicatorStyle,
 ) {
 	duration := time.Duration(style.DurationMS) * time.Millisecond
@@ -940,7 +964,7 @@ func (m *Manager) animateMouseAction(
 	defer ticker.Stop()
 
 	halfWinSize := float64(winSize) / 2.0 //nolint:mnd // divide by 2
-	borderWidth := float64(max(style.BorderWidth, 0))
+	borderWidth := float64(max(style.BorderWidth, 0)) * screenScale
 
 	for {
 		select {
@@ -959,7 +983,7 @@ func (m *Manager) animateMouseAction(
 			scale := style.StartScale + progress*(style.EndScale-style.StartScale)
 			opacity := style.StartOpacity + progress*(style.EndOpacity-style.StartOpacity)
 
-			baseSize := float64(max(style.Size, 1))
+			baseSize := float64(max(style.Size, 1)) * screenScale
 			currentSize := baseSize * scale
 			halfSize := currentSize / 2.0 //nolint:mnd // divide by 2
 

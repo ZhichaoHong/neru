@@ -307,6 +307,7 @@ type gdiTextRenderer struct {
 type fontKey struct {
 	family string
 	size   int
+	weight FontWeight
 }
 
 var gdiTextCache *gdiTextRenderer
@@ -351,14 +352,23 @@ func (r *gdiTextRenderer) ensureScratch(width, height int) error {
 	return nil
 }
 
-// font returns the realized HFONT for a family and size, creating it once.
-func (r *gdiTextRenderer) font(family string, fontSize float64) (uintptr, error) {
+// font returns the realized HFONT for a family, size and weight, creating it
+// once.
+func (r *gdiTextRenderer) font(
+	family string,
+	fontSize float64,
+	weight FontWeight,
+) (uintptr, error) {
 	pixelSize := int(fontSize)
 	if pixelSize == 0 {
 		pixelSize = defaultFontSize
 	}
 
-	key := fontKey{family: family, size: pixelSize}
+	if weight <= 0 {
+		weight = FontWeightBold
+	}
+
+	key := fontKey{family: family, size: pixelSize, weight: weight}
 	if hFont, ok := r.fonts[key]; ok {
 		return hFont, nil
 	}
@@ -371,7 +381,7 @@ func (r *gdiTextRenderer) font(family string, fontSize float64) (uintptr, error)
 	// A negative height is the character height, which is what the
 	// configured size means; a positive one would include internal leading.
 	hFont, _, _ := procCreateFontW.Call(
-		uintptr(-pixelSize), 0, 0, 0, fwBold, 0, 0, 0, 1, 0, 0, 0, 0,
+		uintptr(-pixelSize), 0, 0, 0, uintptr(weight), 0, 0, 0, 1, 0, 0, 0, 0,
 		uintptr(unsafe.Pointer(fontName)),
 	)
 	if hFont == 0 {
@@ -421,7 +431,7 @@ func (r *gdiTextRenderer) paint(pixels []byte, bufW, bufH int, cmd drawCmd) {
 		return
 	}
 
-	hFont, err := r.font(cmd.font, cmd.fontSize)
+	hFont, err := r.font(cmd.font, cmd.fontSize, cmd.fontWeight)
 	if err != nil {
 		return
 	}

@@ -7,6 +7,25 @@ import (
 	"github.com/y3owk1n/neru/internal/domain"
 )
 
+// logicalExtent converts one screen dimension from the pixels the platform
+// reports to the logical units the cell-size constants are written in.
+//
+// It never returns less than 1: a zero would divide by zero in the aspect ratio
+// and in the candidate search, and a dimension that small has no grid to plan
+// either way.
+func logicalExtent(pixels int, scale float64) int {
+	if scale <= 1 {
+		return pixels
+	}
+
+	logical := int(math.Round(float64(pixels) / scale))
+	if logical < 1 {
+		return 1
+	}
+
+	return logical
+}
+
 // Candidate is a valid grid configuration.
 type Candidate struct {
 	cols, rows   int

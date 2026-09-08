@@ -162,6 +162,19 @@ func (s *SystemAdapter) ScreenBounds(ctx context.Context) (image.Rectangle, erro
 	return activeScreenBounds()
 }
 
+// ScreenScale implements ports.ScreenScaler for the screen ScreenBounds
+// answers for. Windows is the only platform that needs it: its bounds are
+// unvirtualized physical pixels, so a caller sizing anything by apparent size
+// has to divide by this.
+func (s *SystemAdapter) ScreenScale(ctx context.Context) (float64, error) {
+	err := ctx.Err()
+	if err != nil {
+		return 1, err
+	}
+
+	return activeScreenScale(), nil
+}
+
 // ScreenBoundsByName returns the bounds of the screen with the given name on Windows.
 func (s *SystemAdapter) ScreenBoundsByName(
 	ctx context.Context,

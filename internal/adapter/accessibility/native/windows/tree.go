@@ -167,6 +167,7 @@ func BuildTree(ctx context.Context, root *Element, opts TreeOptions) (*TreeNode,
 	started := time.Now()
 
 	controls := enumerateClickableElements(root.hwnd, opts.Roles)
+	controls = append(controls, captionButtonElements(root.hwnd, opts.Roles, controls)...)
 
 	if ctx.Err() != nil {
 		return nil, derrors.WrapContextCanceled(ctx, "UIA tree build")

@@ -63,7 +63,6 @@ const (
 	d2dDefaultDPI               = 96
 
 	dwriteFactoryTypeShared    = 0
-	dwriteFontWeightBold       = 700
 	dwriteFontStretchNormal    = 5
 	dwriteTextAlignmentCenter  = 2
 	dwriteParagraphAlignCenter = 2
@@ -464,15 +463,26 @@ func (s *dcompShared) release() {
 	}
 }
 
-// textFormat returns the DirectWrite format for a family and size, creating it
-// once. A format is device-independent, so every window shares it.
-func (s *dcompShared) textFormat(family string, fontSize float64) (comObject, error) {
+// textFormat returns the DirectWrite format for a family, size and weight,
+// creating it once. A format is device-independent, so every window shares it.
+//
+// DWRITE_FONT_WEIGHT uses the same numbers GDI does, so FontWeight crosses the
+// backend boundary unconverted.
+func (s *dcompShared) textFormat(
+	family string,
+	fontSize float64,
+	weight FontWeight,
+) (comObject, error) {
 	pixelSize := int(fontSize)
 	if pixelSize == 0 {
 		pixelSize = defaultFontSize
 	}
 
-	key := fontKey{family: family, size: pixelSize}
+	if weight <= 0 {
+		weight = FontWeightBold
+	}
+
+	key := fontKey{family: family, size: pixelSize, weight: weight}
 	if format, ok := s.formats[key]; ok {
 		return format, nil
 	}
@@ -494,7 +504,7 @@ func (s *dcompShared) textFormat(family string, fontSize float64) (comObject, er
 		vtblDWriteFactoryCreateTextFormat,
 		ptrArg(unsafe.Pointer(familyPtr)),
 		0,
-		dwriteFontWeightBold,
+		uintptr(weight),
 		0,
 		dwriteFontStretchNormal,
 		floatArg(float32(pixelSize)),
@@ -950,7 +960,7 @@ func (s *dcompSurface) paintTriangle(cmd drawCmd) {
 }
 
 func (s *dcompSurface) paintText(cmd drawCmd) {
-	format, err := s.shared.textFormat(cmd.font, cmd.fontSize)
+	format, err := s.shared.textFormat(cmd.font, cmd.fontSize, cmd.fontWeight)
 	if err != nil {
 		return
 	}

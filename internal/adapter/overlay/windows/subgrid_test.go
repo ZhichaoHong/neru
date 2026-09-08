@@ -13,6 +13,7 @@ import (
 	"github.com/y3owk1n/neru/internal/adapter/overlay/manager"
 	gridcomponent "github.com/y3owk1n/neru/internal/adapter/overlay/render/grid"
 	recursivegridcomponent "github.com/y3owk1n/neru/internal/adapter/overlay/render/recursivegrid"
+	winplatform "github.com/y3owk1n/neru/internal/adapter/platform/windows"
 	"github.com/y3owk1n/neru/internal/config"
 	domainGrid "github.com/y3owk1n/neru/internal/domain/grid"
 )
@@ -38,6 +39,8 @@ func (w *recordingWindow) Healthy() bool { return true }
 func (w *recordingWindow) Visible() bool { return true }
 
 func (w *recordingWindow) Bounds() image.Rectangle { return image.Rect(0, 0, 800, 600) }
+
+func (w *recordingWindow) Scale() float64 { return 1 }
 
 func (w *recordingWindow) Backend() string { return "recording" }
 
@@ -79,6 +82,7 @@ func (w *recordingWindow) DrawTextCentered(
 	_ image.Rectangle,
 	_ string,
 	_ float64,
+	_ winplatform.FontWeight,
 	_ uint32,
 ) {
 	w.texts = append(w.texts, text)
