@@ -57,7 +57,7 @@ const (
 	d2dBitmapOptionsTarget      = 0x1
 	d2dBitmapOptionsCannotDraw  = 0x2
 	d2dTextAntialiasGrayscale   = 2
-	d2dCompositeModeSourceCopy  = 1
+	d2dCompositeModeSourceCopy  = 10
 	d2dFigureBeginFilled        = 0
 	d2dFigureEndClosed          = 1
 	d2dDefaultDPI               = 96
@@ -146,7 +146,7 @@ var (
 	//nolint:mnd // interface ID, as the SDK header spells it
 	iidIDXGISurface = windows.GUID{
 		Data1: 0xcafcb56c, Data2: 0x6ac3, Data3: 0x4889,
-		Data4: [8]byte{0xbf, 0x47, 0x9e, 0x23, 0xbb, 0xd2, 0x60, 0xc2},
+		Data4: [8]byte{0xbf, 0x47, 0x9e, 0x23, 0xbb, 0xd2, 0x60, 0xec},
 	}
 	//nolint:mnd // interface ID, as the SDK header spells it
 	iidIDCompositionDevice = windows.GUID{

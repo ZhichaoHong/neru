@@ -46,6 +46,8 @@ const (
 	bmpV4Size     = 108
 	biBitfields   = 3
 	ulwAlpha      = 2
+	lwaAlpha      = 0x00000002
+	opaqueAlpha   = 255
 	bytesPerPixel = 4
 	acSrcOver     = 0
 	acSrcAlpha    = 1
@@ -120,6 +122,7 @@ var (
 	procDefWindowProcW              = user32.NewProc("DefWindowProcW")
 	procIsWindow                    = user32.NewProc("IsWindow")
 	procUpdateLayeredWindowIndirect = user32.NewProc("UpdateLayeredWindowIndirect")
+	procSetLayeredWindowAttributes  = user32.NewProc("SetLayeredWindowAttributes")
 	procDrawTextW                   = user32.NewProc("DrawTextW")
 
 	procSetWindowDisplayAffinity = user32.NewProc("SetWindowDisplayAffinity")
@@ -300,9 +303,11 @@ type OverlayWindow struct {
 }
 
 func overlayWndProc(hwnd uintptr, msg uint32, wParam, lParam uintptr) uintptr {
-	// Click-through. WS_EX_TRANSPARENT makes a layered window pass the mouse
-	// on; a DirectComposition window is not layered, so answer the hit test
-	// directly and both kinds behave the same.
+	// Click-through. Both surfaces get a layered window and WS_EX_TRANSPARENT,
+	// which is what takes them out of another process's hit testing
+	// (createHWNDLocked). The HTTRANSPARENT answer covers the rest: a
+	// WindowFromPoint on this thread keeps looking past the overlay rather than
+	// stopping on it.
 	if msg == wmNCHitTest {
 		return htTransparent
 	}
@@ -1017,9 +1022,19 @@ func (o *OverlayWindow) rebuildOnGDI() error {
 
 // createHWNDLocked creates the window and its surface. UI thread only.
 //
-// DirectComposition is tried first where the build supports it; the window
-// it needs is not a layered one, so a surface that fails to come up costs the
-// HWND too, and the GDI surface gets a fresh layered window of its own.
+// DirectComposition is tried first where the build supports it; a surface that
+// fails to come up costs the HWND too, and the GDI surface gets a fresh window
+// of its own.
+//
+// Both windows are layered, for different reasons. The GDI one has to be:
+// UpdateLayeredWindowIndirect is how it presents. The DirectComposition one
+// presents through its own swap chain and needs nothing from the layer, but
+// WS_EX_LAYERED is also the only thing that keeps a window out of hit testing
+// for other processes. WS_EX_TRANSPARENT and an HTTRANSPARENT answer to
+// WM_NCHITTEST only make Windows keep looking through windows on the same
+// thread; there are none, so an unlayered overlay drops every mouse message
+// that lands on it instead of letting it reach the window underneath. The
+// constant alpha set below leaves the composed content untouched.
 func (o *OverlayWindow) createHWNDLocked() error {
 	width := o.bounds.Dx()
 
@@ -1029,8 +1044,20 @@ func (o *OverlayWindow) createHWNDLocked() error {
 	}
 
 	if !o.noDComp && dcompAvailable() {
-		err := o.createWindowWithSurface(width, height, wsExNoRedirectionBitmap, newDCompSurface)
+		err := o.createWindowWithSurface(
+			width,
+			height,
+			wsExNoRedirectionBitmap|wsExLayered,
+			newDCompSurface,
+		)
 		if err == nil {
+			discardCall(procSetLayeredWindowAttributes.Call(
+				uintptr(o.hwnd),
+				0,
+				opaqueAlpha,
+				lwaAlpha,
+			))
+
 			return nil
 		}
 

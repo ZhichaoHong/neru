@@ -62,7 +62,7 @@ func TestProfileFor(t *testing.T) {
 			wantHotkeysBuild:  BuildModePureGo,
 			wantKeyboard:      "low-level keyboard hook",
 			wantKeyboardBuild: BuildModePureGo,
-			wantOverlay:       "layered win32 window",
+			wantOverlay:       "DirectComposition + Direct2D, GDI fallback",
 			wantOverlayBuild:  BuildModePureGo,
 			wantNotify:        "tray balloon tips",
 			wantNotifyBuild:   BuildModePureGo,
