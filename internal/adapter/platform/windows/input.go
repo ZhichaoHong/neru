@@ -41,16 +41,21 @@ const (
 
 	wheelDelta = 120
 
-	// scrollPixelsPerNotch maps the pixel delta every caller sends to wheel
+	// ScrollPixelsPerNotch maps the pixel delta every caller sends to wheel
 	// notches. Linux uses the same figure for its X11 button clicks, so one
 	// scroll_step travels the same number of notches on both; before it the
 	// pixel count was sent as a notch count and one scroll_step of 50 pixels
 	// was fifty notches.
-	scrollPixelsPerNotch = 30
+	//
+	// Exported because the UI Automation scroll path in
+	// accessibility/native/windows divides by it too: a ScrollPattern small
+	// increment is one line, which is what a notch approximates, so the two
+	// Windows routes have to read the same number to travel the same distance.
+	ScrollPixelsPerNotch = 30
 	// wheelUnitsPerPixel is that mapping in mouseData units: WHEEL_DELTA is
 	// 120 per notch, so a pixel is four units and an application accumulates
 	// the fraction the way it does for a high-resolution wheel.
-	wheelUnitsPerPixel = wheelDelta / scrollPixelsPerNotch
+	wheelUnitsPerPixel = wheelDelta / ScrollPixelsPerNotch
 )
 
 // mouseInput and input mirror Win32 MOUSEINPUT/INPUT on 64-bit Windows (40 bytes).

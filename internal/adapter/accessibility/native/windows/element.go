@@ -304,7 +304,25 @@ func MouseUp(button action.MouseButton) error {
 
 // ScrollAtCursor scrolls the mouse on both axes, with modifiers presented as
 // held.
+//
+// The vertical axis is always the wheel. The horizontal one prefers the UI
+// Automation ScrollPattern under the cursor, because WM_MOUSEHWHEEL is a message
+// a window may simply ignore and File Explorer's item view does (scroll.go);
+// where nothing advertises horizontal scrolling, the wheel is still what goes
+// out, and whether it moves anything remains the target's call.
+//
+// A modified scroll never takes the pattern route. Scroll carries no modifier,
+// so a ctrl+scroll asking an application to zoom would arrive as a plain scroll
+// instead - which is worse than not scrolling, because it does the wrong thing
+// rather than nothing.
 func ScrollAtCursor(deltaX int, deltaY int, modifiers action.Modifiers) error {
+	if deltaX != 0 && modifiers == 0 {
+		point, err := winplatform.CurrentCursorPosition()
+		if err == nil && scrollHorizontallyViaPattern(point, deltaX) {
+			return winplatform.ScrollWheel(0, deltaY, modifiers)
+		}
+	}
+
 	return winplatform.ScrollWheel(deltaX, deltaY, modifiers)
 }
 
